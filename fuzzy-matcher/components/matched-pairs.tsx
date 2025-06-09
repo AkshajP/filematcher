@@ -1,0 +1,88 @@
+// components/matched-pairs.tsx - Matched Pairs Component
+
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { MatchedPair } from '@/lib/types';
+
+interface MatchedPairsProps {
+  matchedPairs: MatchedPair[];
+  onRemoveMatch: (index: number) => void;
+}
+
+export function MatchedPairs({ matchedPairs, onRemoveMatch }: MatchedPairsProps) {
+  return (
+    <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="bg-emerald-700 text-white p-4 flex justify-between items-center">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          ✅ Completed Mappings
+        </h2>
+        <Badge className="bg-white/20 text-white">
+          {matchedPairs.length}
+        </Badge>
+      </div>
+
+      {/* Matched Pairs List */}
+      <ScrollArea className="flex-1 p-3">
+        {matchedPairs.length === 0 ? (
+          <div className="text-center text-gray-500 py-8">
+            No matches confirmed yet
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {matchedPairs.map((pair, index) => {
+              const parts = pair.path.split('/');
+              const fileName = parts.pop() || '';
+              const pathParts = parts.join('/');
+
+              return (
+                <div
+                  key={`${pair.reference}-${index}`}
+                  className="bg-green-50 border border-green-200 rounded-md p-4 relative group"
+                >
+                  {/* Remove Button */}
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="absolute top-2 right-2 w-6 h-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => onRemoveMatch(index)}
+                    title="Remove match"
+                  >
+                    ×
+                  </Button>
+
+                  {/* Reference */}
+                  <div className="font-medium text-emerald-700 text-sm mb-2 pr-8">
+                    {pair.reference}
+                  </div>
+
+                  {/* File Path */}
+                  <div className="text-xs text-gray-600 font-mono break-all leading-relaxed">
+                    <span className="text-gray-400">{pathParts}/</span>
+                    <span className="text-gray-700 font-medium">{fileName}</span>
+                  </div>
+
+                  {/* Metadata */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <Badge variant="outline" className="text-xs">
+                      {(pair.score * 100).toFixed(1)}%
+                    </Badge>
+                    <Badge variant="outline" className="text-xs">
+                      {pair.method}
+                    </Badge>
+                    {pair.timestamp && (
+                      <span className="text-xs text-gray-400">
+                        {new Date(pair.timestamp).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </ScrollArea>
+    </div>
+  );
+}
