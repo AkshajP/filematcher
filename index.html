@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Arbitration eBundling File Mapper</title>
+    <title>TERES File Mapper</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -12,87 +12,103 @@
         ✅ Mapping exported to clipboard!
     </div>
     
-    <div class="main-container">
-        <!-- Header with stats -->
-        <div class="header">
-            <h1>📋 TERES File Mapper</h1>
-            <div class="stats">
-                <div class="stat-item">
-                    Unmatched: <span class="stat-value" id="unmatchedCount">0</span>
-                </div>
-                <div class="stat-item">
-                    Matched: <span class="stat-value" id="matchedCount">0</span>
-                </div>
-                <div class="stat-item">
-                    Progress: <span class="stat-value" id="progressPercent">0%</span>
-                </div>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>TERES File Mapper</h1>
+            <div class="header-actions">
+                <button class="btn btn-secondary" onclick="showImportModal()">Import Mappings</button>
+                <button class="btn btn-secondary" id="exportBtn">Export Mappings</button>
+                <button class="btn btn-primary" id="autoPopulateBtn">Suggested Mappings</button>
             </div>
-        </div>
-        
-        <!-- Left Panel: Unmatched References -->
-        <div class="panel">
-            <div class="unmatched-header">
-                <h4>🔍 Unmatched Refs</h4>
-                <div class="multi-select-controls">
-                    <input type="checkbox" class="select-all-checkbox" id="selectAllCheckbox" title="Select All">
-                    <span class="selected-count" id="selectedCount">0 selected</span>
-                </div>
-            </div>
-            
-            <div class="bulk-actions hidden" id="bulkActions">
-                <!-- Auto-matcher button will be added here by auto-matcher.js -->
-                <button class="bulk-btn btn-secondary" id="bulkSkipBtn">⏭ Skip Selected</button>
-                <button class="bulk-btn btn-secondary" id="bulkDeselectBtn">✕ Deselect All</button>
-                <div style="margin-left: auto;">
-                    <button class="bulk-btn btn-secondary" id="detectRemainingBtn">📄 Detect Remaining Files</button>
-                </div>
-            </div>
-            
-            <div class="unmatched-list" id="unmatchedList">
-                <!-- Unmatched references will be populated here -->
-            </div>
-        </div>
-        
-        <!-- Center Panel: Search & Results -->
-        <div class="panel search-panel">
-            <div class="current-reference" id="currentReference" style="display: none;">
-                <h4>Currently Mapping:</h4>
-                <div id="currentReferenceText"></div>
-            </div>
-            
-            <input type="text" class="search-input" id="searchInput" placeholder="Search for matching file paths...">
-            
-            <div id="learningSuggestions" class="learning-suggestions-panel" style="display: none;"></div>
+        </header>
 
-            <div class="search-results" id="searchResults">
-                <div class="no-results">Select a file reference to start mapping</div>
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Left Panel - File Descriptions -->
+            <div class="panel">
+                <div class="unmatched-header">
+                    <h2>📋 File References</h2>
+                    <div class="multi-select-controls">
+                        <input type="checkbox" class="select-all-checkbox" id="selectAllCheckbox" title="Select All">
+                        <span class="selected-count" id="selectedCount">0 selected</span>
+                    </div>
+                </div>
+                
+                <div class="bulk-actions hidden" id="bulkActions">
+                    <!-- Auto-matcher button will be added here by auto-matcher.js -->
+                    <button class="bulk-btn btn-secondary" id="bulkSkipBtn">⏭ Skip Selected</button>
+                    <button class="bulk-btn btn-secondary" id="bulkDeselectBtn">✕ Deselect All</button>
+                    <div style="margin-left: auto;">
+                        <button class="bulk-btn btn-secondary" id="detectRemainingBtn">📄 Detect Remaining</button>
+                    </div>
+                </div>
+                
+                <div class="panel-content" id="unmatchedList">
+                    <!-- File references will be populated here -->
+                </div>
             </div>
-            
-            <div class="action-buttons">
-                <!-- NEW: Add a bulk confirm button, initially hidden -->
-                <button class="btn btn-primary" id="confirmBulkMatchBtn" style="display: none;">
-                    ✓ Confirm Bulk Match (<span id="bulkMatchCount">0</span>)
-                </button>
-                <button class="btn btn-primary" id="confirmMatchBtn" disabled>✓ Confirm Match</button>
-                <button class="btn btn-secondary" id="skipBtn" disabled>⏭ Skip for Now</button>
+
+            <!-- Middle Panel - File Paths -->
+            <div class="panel">
+                <div class="current-reference" id="currentReference" style="display: none;">
+                    <h4>Currently Mapping</h4>
+                    <div id="currentReferenceText"></div>
+                </div>
+                
+                <input type="text" class="search-input" id="searchInput" placeholder="Search for matching file paths...">
+                
+                <div id="learningSuggestions" class="learning-suggestions-panel" style="display: none;"></div>
+
+                <div class="panel-content search-results" id="searchResults">
+                    <div class="no-results">Select a file reference to start mapping</div>
+                </div>
+                
+                <div class="action-buttons">
+                    <!-- Bulk confirm button, initially hidden -->
+                    <button class="btn btn-primary" id="confirmBulkMatchBtn" style="display: none;">
+                        ✓ Confirm Bulk Match (<span id="bulkMatchCount">0</span>)
+                    </button>
+                    <button class="btn btn-primary" id="confirmMatchBtn" disabled>✓ Confirm Match</button>
+                    <button class="btn btn-secondary" id="skipBtn" disabled>⏭ Skip</button>
+                </div>
             </div>
-        </div>
-        
-        <!-- Right Panel: Matched Pairs -->
-        <div class="panel">
-            <h4>✅ Matched Pairs</h4>
-            <div class="matched-list" id="matchedList">
-                <!-- Matched pairs will be populated here -->
+
+            <!-- Right Panel - Mappings -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>✅ Completed Mappings</h2>
+                    <span class="count" id="mappingsCount">0</span>
+                </div>
+                <div class="panel-content" id="matchedList">
+                    <!-- Completed mappings will be populated here -->
+                </div>
             </div>
-            
-            <div class="export-section">
-                <button class="btn btn-primary" id="exportBtn">📤 Export Mappings</button>
+        </main>
+
+        <!-- Bottom Status Bar -->
+        <footer class="status-bar">
+            <div class="progress-info">
+                <div class="progress-item">
+                    <span class="label">Mapped:</span>
+                    <span class="value" id="matchedCount">0</span>
+                </div>
+                <div class="progress-item">
+                    <span class="label">Unmatched:</span>
+                    <span class="value" id="unmatchedCount">0</span>
+                </div>
+                <div class="progress-item">
+                    <span class="label">Progress:</span>
+                    <span class="value" id="progressPercent">0%</span>
+                </div>
             </div>
-        </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+        </footer>
     </div>
 
-
-   <!-- Reharmonized Script Loading Order -->
+    <!-- Reharmonized Script Loading Order -->
     <script src="data-loader.js"></script>
     <script src="fuzzy-matcher.js"></script>
     <script src="workflow-manager.js"></script> 
@@ -100,8 +116,9 @@
     <script src="fuzzy-matcher-manager.js"></script>
     <script src="virtual-scroller.js"></script>
     <script src="ui-manager.js"></script>
-    <script src="export-manager.js"></script>
     <script src="import-export-manager.js"></script>
+    <script src="export-manager.js"></script>
+    <script src="import-modal.js"></script>
     <script src="cache-manager.js"></script>
     <script src="session-manager.js"></script>
     <script src="pattern-matcher.js"></script>

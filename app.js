@@ -354,11 +354,21 @@ function setupEventListeners() {
         if (typeof detectRemainingFiles === 'function') detectRemainingFiles();
     });
 
-    // New bulkConfirmBtn listener.
-    const bulkConfirmBtn = document.getElementById('confirmBulkMatchBtn');
-    if (bulkConfirmBtn) bulkConfirmBtn.addEventListener('click', () => {
-        if (typeof confirmBulkMatch === 'function') confirmBulkMatch();
-    });
+   const bulkConfirmBtn = document.getElementById('confirmBulkMatchBtn');
+        if (bulkConfirmBtn) bulkConfirmBtn.addEventListener('click', () => {
+            if (typeof confirmBulkMatch === 'function') confirmBulkMatch();
+        });
+
+        // Add event listener for auto-populate button
+        const autoPopulateBtn = document.getElementById('autoPopulateBtn');
+        if (autoPopulateBtn) autoPopulateBtn.addEventListener('click', () => {
+            if (typeof runAutoMatch === 'function') {
+                runAutoMatch();
+            } else {
+                console.warn('Auto-match function not available');
+                showNotification('Auto-match feature is loading...', 'info');
+            }
+        });
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
@@ -376,6 +386,8 @@ function setupEventListeners() {
         }
     });
 }
+
+
 
 // Start the application
 document.addEventListener('DOMContentLoaded', () => {

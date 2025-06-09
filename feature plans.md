@@ -7,5 +7,6 @@
 - change UI, move teres file tracker down, make it readable 
 - check on order of selection of mapping 
 
-- see if indentation can be added bulk matching (how does order get selected?) prolly show staging before confirming a mapping
+- see if indentation can be added bulk matching (how does order get selected?) prolly show staging before confirming a mapping 
+(implement a counting on click?)
 

@@ -10,6 +10,11 @@ function toggleReferenceSelection(reference, event) {
         window.selectedReferences.add(reference);
     }
     
+    // Re-render both lists to update selection numbers
+    updateUnmatchedList();
+    if (window.currentReference) {
+        updateSearchResults();
+    }
     updateSelectionUI();
 }
 
@@ -295,3 +300,4 @@ function showBulkProcessing(show = true) {
         bulkBtn.innerHTML = `✓ Confirm Bulk Match (${window.selectedReferences.size})`;
     }
 }
+

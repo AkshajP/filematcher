@@ -1,4 +1,4 @@
-// ui-manager.js - UI Management Functions
+// ui-manager.js - UI Management Functions (Updated with numbered selection)
 
 // Virtual scrollers
 let unmatchedScroller = null;
@@ -44,7 +44,7 @@ function updateSearchResults() {
     const searchResults = document.getElementById('searchResults');
     const confirmBtn = document.getElementById('confirmMatchBtn');
     
-    const searchTerm = searchInput.value.trim(); // Use trim here for consistency
+    const searchTerm = searchInput.value.trim();
     
     // Use Web Worker for search if available
     if (window.matcherManager) {
@@ -73,7 +73,6 @@ function updateSearchResults() {
             renderSuggestions(searchData.suggestions);
         });
     } else {
-        // ... (fallback logic also benefits from this fix implicitly)
         console.log('Using fallback search (no worker manager)');
         const searchData = searchMatches(searchTerm);
         searchInput.classList.remove('searching');
@@ -97,9 +96,6 @@ function updateSearchResults() {
     }
 }
 
-// Separate function to render search results
-// ui-manager.js
-
 /**
  * Renders the search result items in the center panel.
  * This function handles both single and bulk selection logic.
@@ -117,6 +113,9 @@ function renderSearchResults(matches, searchTerm) {
         return;
     }
 
+    // Get ordered arrays for numbered selection
+    const selectedFilePaths = Array.from(window.selectedFilePaths);
+
     // Regular rendering for smaller result sets
     searchResults.innerHTML = matches.map((match) => {
         const parts = match.path.split('/');
@@ -125,6 +124,8 @@ function renderSearchResults(matches, searchTerm) {
         
         // Check if this file path is selected for bulk matching
         const isSelected = window.selectedFilePaths.has(match.path);
+        const selectionIndex = selectedFilePaths.indexOf(match.path);
+        const selectionNumber = selectionIndex >= 0 ? selectionIndex + 1 : null;
 
         // Learning engine UI integration
         const isLearned = match.isLearned || (match.scoreBreakdown && match.scoreBreakdown.learned > 0);
@@ -143,11 +144,19 @@ function renderSearchResults(matches, searchTerm) {
             scoreBadge = `<div class="score-badge ${scoreBadgeClass}" title="${scoreTitle}">${(match.score * 100).toFixed(1)}%</div>`;
         }
         
+        // Selection indicator - show number if selected, checkbox if not
+        let selectionIndicator = '';
+        if (isSelected && selectionNumber) {
+            selectionIndicator = `<div class="selection-number">${selectionNumber}</div>`;
+        } else {
+            selectionIndicator = `<input type="checkbox" class="result-checkbox" data-path="${match.path}" ${isSelected ? 'checked' : ''}>`;
+        }
+        
         return `
-            <div class="result-item ${isSelected ? 'selected' : ''}" data-path="${match.path}" data-score="${match.score}" title="${scoreTitle}">
-                <input type="checkbox" class="result-checkbox" data-path="${match.path}" ${isSelected ? 'checked' : ''}>
+            <div class="result-item ${isSelected ? 'selected' : ''} ${learnedClass}" data-path="${match.path}" data-score="${match.score}" title="${scoreTitle}">
+                ${selectionIndicator}
                 ${learnedIcon}
-                <div class="file-details">
+                <div class="file-item">
                     <div class="file-path">${pathParts}/</div>
                     <div class="file-name">${fileName}</div>
                 </div>
@@ -178,7 +187,7 @@ function renderSearchResults(matches, searchTerm) {
             
             window.selectedResult = {
                 path: item.getAttribute('data-path'),
-                score: Number.parseFloat(item.getAttribute('data-score'))
+                score: parseFloat(item.getAttribute('data-score'))
             };
             
             // Update the entire UI, which handles button states
@@ -199,39 +208,28 @@ function renderSearchResults(matches, searchTerm) {
             
             // Clear single selection when a checkbox is used
             window.selectedResult = null; 
-            // biome-ignore lint/complexity/noForEach: <explanation>
             document.querySelectorAll('.result-item.selected').forEach(el => {
                  if (!window.selectedFilePaths.has(el.dataset.path)) {
                     el.classList.remove('selected');
                  }
             });
 
-            // Update the entire UI, which handles button states
+            // Re-render to update numbers
+            renderSearchResults(matches, searchTerm);
             updateBulkActionUI();
         });
     }
 
     // After rendering, ensure the button states are correct.
-    // This is a final check, especially for the initial render.
     updateBulkActionUI();
 }
 
 // Function to render learning suggestions
 function renderSuggestions(suggestions) {
     const suggestionsContainer = document.getElementById('learningSuggestions');
-    // if (!suggestionsContainer) {
-    //     suggestionsContainer = document.createElement('div');
-    //     suggestionsContainer.id = 'learningSuggestions';
-    //     suggestionsContainer.className = 'learning-suggestions-panel';
-        
-    //     const searchPanel = document.querySelector('.search-panel');
-    //     // Insert after the search input
-    //     searchPanel.querySelector('#searchInput').insertAdjacentElement('afterend', suggestionsContainer);
-    // }
 
     if (!suggestions || suggestions.length === 0) {
         suggestionsContainer.style.display = 'none';
-        // suggestionsContainer.innerHTML = '';
         return;
     }
 
@@ -249,7 +247,7 @@ function renderSuggestions(suggestions) {
     `;
 }
 
-// Update unmatched list
+// Update unmatched list with numbered selection
 function updateUnmatchedList() {
     const unmatchedList = document.getElementById('unmatchedList');
     
@@ -264,18 +262,32 @@ function updateUnmatchedList() {
         return;
     }
     
+    // Get ordered arrays for numbered selection
+    const selectedReferences = Array.from(window.selectedReferences);
+    
     // Regular rendering for small lists
     unmatchedList.innerHTML = window.unmatchedReferences.map(reference => {
         const isSelected = window.selectedReferences.has(reference);
         const isActive = reference === window.currentReference;
         const isGenerated = isGeneratedReference(reference);
         
+        const selectionIndex = selectedReferences.indexOf(reference);
+        const selectionNumber = selectionIndex >= 0 ? selectionIndex + 1 : null;
+        
+        // Selection indicator - show number if selected, checkbox if not
+        let selectionIndicator = '';
+        if (isSelected && selectionNumber) {
+            selectionIndicator = `<div class="selection-number">${selectionNumber}</div>`;
+        } else {
+            selectionIndicator = `<input type="checkbox" class="reference-checkbox" 
+                       ${isSelected ? 'checked' : ''}
+                       onclick="toggleReferenceSelection('${reference.replace(/'/g, "\\'")}', event)">`;
+        }
+        
         return `
             <div class="reference-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}" 
                  onclick="selectReference('${reference.replace(/'/g, "\\'")}')">
-                <input type="checkbox" class="reference-checkbox" 
-                       ${isSelected ? 'checked' : ''}
-                       onclick="toggleReferenceSelection('${reference.replace(/'/g, "\\'")}', event)">
+                ${selectionIndicator}
                 <div class="reference-text">${reference}</div>
                 ${isGenerated ? '<div class="reference-type-badge generated">AUTO</div>' : '<div class="reference-type-badge original">ORIG</div>'}
             </div>
@@ -306,24 +318,37 @@ function updateMatchedList() {
         
         return `
             <div class="matched-item">
-                <div class="matched-reference">${pair.reference}</div>
-                <div class="matched-path">${pathParts}/${fileName}</div>
+                <div class="mapping-description">${pair.reference}</div>
+                <div class="mapping-file">${pathParts}/${fileName}</div>
                 <button class="remove-match" onclick="removeMatch(${index})" title="Remove match">×</button>
             </div>
         `;
     }).join('');
 }
 
-// Update statistics
+// Update statistics with proper footer progress bar
 function updateStats() {
-    const total = fileReferences.length;
+    const total = window.fileReferences.length;
     const matched = window.matchedPairs.length;
     const unmatched = window.unmatchedReferences.length;
     const progress = total > 0 ? Math.round((matched / total) * 100) : 0;
     
+    // Update footer stats
     document.getElementById('unmatchedCount').textContent = unmatched;
     document.getElementById('matchedCount').textContent = matched;
     document.getElementById('progressPercent').textContent = `${progress}%`;
+    
+    // Update progress bar
+    const progressFill = document.getElementById('progressFill');
+    if (progressFill) {
+        progressFill.style.width = `${progress}%`;
+    }
+    
+    // Update right panel count
+    const mappingsCount = document.getElementById('mappingsCount');
+    if (mappingsCount) {
+        mappingsCount.textContent = matched;
+    }
 }
 
 // Update selection UI for multi-select
@@ -347,7 +372,7 @@ function updateSelectionUI() {
 }
 
 /**
- * NEW: Central function to manage the visibility and state of action buttons.
+ * Central function to manage the visibility and state of action buttons.
  */
 function updateBulkActionUI() {
     const confirmBtn = document.getElementById('confirmMatchBtn');
@@ -374,8 +399,7 @@ function updateBulkActionUI() {
     }
 
     // Highlight selected results
-    // biome-ignore lint/complexity/noForEach: <explanation>
-        document.querySelectorAll('.result-item').forEach(item => {
+    document.querySelectorAll('.result-item').forEach(item => {
         const path = item.dataset.path;
         item.classList.toggle('selected', window.selectedFilePaths.has(path));
     });
@@ -407,7 +431,7 @@ function showNotification(message, type = 'success') {
         // Update styling based on type
         notification.style.background = type === 'error' ? '#f44336' : 
                                        type === 'warning' ? '#FF9800' : 
-                                       type === 'info' ? '#2196F3' : '#4CAF50';
+                                       type === 'info' ? '#2196F3' : 'rgb(18, 102, 79)';
         
         // Longer display time for errors
         const displayTime = type === 'error' ? 5000 : 3000;

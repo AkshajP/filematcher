@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Matcher System</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>File Matcher System</h1>
+            <div class="header-actions">
+                <button class="btn btn-secondary" onclick="showImportModal()">
+                    <span class="icon">📥</span>
+                    Import Mappings
+                </button>
+                <button class="btn btn-secondary" onclick="exportMappings()">
+                    <span class="icon">📤</span>
+                    Export Mappings
+                </button>
+                <select class="export-format">
+                    <option value="json">JSON</option>
+                    <option value="csv">CSV</option>
+                </select>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Left Panel - File Descriptions -->
+            <div class="panel left-panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <span class="panel-icon">⚪</span>
+                        <h2>Unmatched Refs</h2>
+                    </div>
+                    <div class="panel-info">
+                        <span class="selected-count" id="selected-count">0 selected</span>
+                    </div>
+                </div>
+                <div class="panel-actions">
+                    <button class="btn btn-primary btn-auto-match" onclick="autoPopulate()">
+                        <span class="icon">🎯</span>
+                        Auto-Match
+                    </button>
+                    <button class="btn btn-secondary btn-small" onclick="skipSelected()">
+                        <span class="icon">⏭️</span>
+                        Skip Selected
+                    </button>
+                    <button class="btn btn-secondary btn-small" onclick="deselectAll()">
+                        <span class="icon">❌</span>
+                        Deselect All
+                    </button>
+                    <button class="btn btn-secondary btn-small" onclick="detectFiles()">
+                        <span class="icon">🔍</span>
+                        Detect Remaining Files
+                    </button>
+                </div>
+                <div class="panel-content" id="descriptions-list">
+                    <!-- File descriptions will be populated here -->
+                </div>
+            </div>
+
+            <!-- Middle Panel - File Paths -->
+            <div class="panel middle-panel">
+                <div class="panel-header">
+                    <div class="search-container">
+                        <input type="text" class="search-input" placeholder="Search files..." id="file-search">
+                        <span class="search-icon">🔍</span>
+                    </div>
+                </div>
+                <div class="panel-content" id="files-list">
+                    <!-- File paths will be populated here -->
+                </div>
+                <div class="suggestion-actions" id="suggestion-actions" style="display: none;">
+                    <button class="btn btn-confirm" onclick="confirmCurrentMatch()">
+                        <span class="icon">✓</span>
+                        Confirm Match
+                    </button>
+                    <button class="btn btn-skip" onclick="skipCurrentMatch()">
+                        <span class="icon">⏭️</span>
+                        Skip for Now
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Panel - Mappings -->
+            <div class="panel right-panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <span class="panel-icon">✅</span>
+                        <h2>Matched Pairs</h2>
+                    </div>
+                    <span class="count" id="mappings-count">0</span>
+                </div>
+                <div class="panel-content" id="mappings-list">
+                    <div class="empty-state">
+                        <p>No matches confirmed yet</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Bottom Status Bar -->
+        <footer class="status-bar">
+            <div class="progress-info">
+                <div class="progress-item">
+                    <span class="label">Mapped:</span>
+                    <span class="value" id="mapped-count">0</span>
+                </div>
+                <div class="progress-item">
+                    <span class="label">Unmatched:</span>
+                    <span class="value" id="unmatched-count">0</span>
+                </div>
+                <div class="progress-item">
+                    <span class="label">Progress:</span>
+                    <span class="value" id="progress-percentage">0%</span>
+                </div>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+        </footer>
+
+        <!-- Import Modal -->
+        <div class="modal" id="import-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Import Mappings</h3>
+                    <button class="close-btn" onclick="closeImportModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <textarea id="import-textarea" placeholder="Paste your JSON mappings here..."></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeImportModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="importMappings()">Import</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
