@@ -60,8 +60,8 @@ const initialState: MatcherState = {
   unmatchedReferences: [],
   matchedPairs: [],
   usedFilePaths: new Set(),
-  selectedReferences: new Set(),
-  selectedFilePaths: new Set(),
+ selectedReferences: [],
+  selectedFilePaths: [],
   currentReference: null,
   selectedResult: null,
   sessionId: generateSessionId(),
@@ -83,53 +83,60 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
       return {
         ...state,
         currentReference: action.payload,
-        selectedReferences: new Set(),
-        selectedFilePaths: new Set(),
+        selectedReferences: [],
+        selectedFilePaths: [],
         selectedResult: null,
       };
 
     case 'TOGGLE_REFERENCE_SELECTION': {
-      const newSelected = new Set(state.selectedReferences);
-      if (newSelected.has(action.payload)) {
-        newSelected.delete(action.payload);
-      } else {
-        newSelected.add(action.payload);
-      }
-      
-      // Clear single selection when entering bulk mode
-      const selectedResult = newSelected.size > 0 ? null : state.selectedResult;
-      
-      return {
-        ...state,
-        selectedReferences: newSelected,
-        selectedResult,
-      };
-    }
+  const existing = state.selectedReferences.find(item => item.item === action.payload);
+  let newSelected;
+  
+  if (existing) {
+    // Remove item but keep order numbers intact
+    newSelected = state.selectedReferences.filter(item => item.item !== action.payload);
+  } else {
+    // Add with next available order number
+    const maxOrder = state.selectedReferences.length > 0 
+      ? Math.max(...state.selectedReferences.map(item => item.order))
+      : 0;
+    newSelected = [...state.selectedReferences, { item: action.payload, order: maxOrder + 1 }];
+  }
+  
+  const selectedResult = newSelected.length > 0 ? null : state.selectedResult;
+  
+  return {
+    ...state,
+    selectedReferences: newSelected,
+    selectedResult,
+  };
+}
 
     case 'TOGGLE_FILEPATH_SELECTION': {
-      const newSelected = new Set(state.selectedFilePaths);
-      if (newSelected.has(action.payload)) {
-        newSelected.delete(action.payload);
-      } else {
-        // Only allow selection if we haven't exceeded reference count
-        if (newSelected.size < state.selectedReferences.size) {
-          newSelected.add(action.payload);
-        }
-      }
-      
-      return {
-        ...state,
-        selectedFilePaths: newSelected,
-        selectedResult: null, // Clear single selection when using bulk
-      };
+  const existing = state.selectedFilePaths.find(item => item.item === action.payload);
+  let newSelected;
+  
+  if (existing) {
+    // Remove item but keep order numbers intact
+    newSelected = state.selectedFilePaths.filter(item => item.item !== action.payload);
+  } else {
+    // Only allow selection if we haven't exceeded reference count
+    if (state.selectedFilePaths.length < state.selectedReferences.length) {
+      const maxOrder = state.selectedFilePaths.length > 0 
+        ? Math.max(...state.selectedFilePaths.map(item => item.order))
+        : 0;
+      newSelected = [...state.selectedFilePaths, { item: action.payload, order: maxOrder + 1 }];
+    } else {
+      return state; // Don't allow selection
     }
+  }}
 
     case 'SELECT_ALL_REFERENCES': {
       const allSelected = state.selectedReferences.size === state.unmatchedReferences.length;
       return {
         ...state,
-        selectedReferences: allSelected ? new Set() : new Set(state.unmatchedReferences),
-        selectedFilePaths: new Set(),
+        selectedReferences: allSelected ? [] : new Set(state.unmatchedReferences),
+        selectedFilePaths: [],
         selectedResult: null,
       };
     }
@@ -138,7 +145,7 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
       return {
         ...state,
         selectedResult: action.payload,
-        selectedFilePaths: new Set(), // Clear bulk selections
+        selectedFilePaths: [], // Clear bulk selections
       };
 
     case 'CONFIRM_MATCH': {
@@ -193,16 +200,12 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
       const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
       
       return {
-        ...state,
-        matchedPairs: [...state.matchedPairs, ...newPairs],
-        usedFilePaths: newUsedPaths,
-        unmatchedReferences: newUnmatched,
-        selectedReferences: new Set(),
-        selectedFilePaths: new Set(),
-        currentReference: nextReference,
-        selectedResult: null,
-      };
-    }
+    ...state,
+    selectedFilePaths: newSelected,
+    selectedResult: null,
+  };
+}
+    
 
     case 'SKIP_REFERENCE': {
       if (!state.currentReference) return state;
@@ -260,8 +263,8 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
       return {
         ...state,
         unmatchedReferences: newUnmatched,
-        selectedReferences: new Set(),
-        selectedFilePaths: new Set(),
+        selectedReferences: [],
+        selectedFilePaths: [],
         currentReference: nextReference,
       };
     }
@@ -269,8 +272,8 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
     case 'BULK_DESELECT_ALL':
       return {
         ...state,
-        selectedReferences: new Set(),
-        selectedFilePaths: new Set(),
+        selectedReferences: [],
+        selectedFilePaths: [],
       };
 
     case 'DETECT_REMAINING_FILES': {
@@ -286,8 +289,8 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
     case 'CLEAR_SELECTIONS':
       return {
         ...state,
-        selectedReferences: new Set(),
-        selectedFilePaths: new Set(),
+        selectedReferences: [],
+        selectedFilePaths: [],
         selectedResult: null,
       };
 

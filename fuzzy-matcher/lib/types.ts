@@ -31,8 +31,8 @@ export interface MatcherState {
   unmatchedReferences: string[];
   matchedPairs: MatchedPair[];
   usedFilePaths: Set<string>;
-  selectedReferences: Set<string>;
-  selectedFilePaths: Set<string>;
+  selectedReferences: Array<{ item: string; order: number }>;
+  selectedFilePaths: Array<{ item: string; order: number }>;
   currentReference: string | null;
   selectedResult: FileMatch | null;
   sessionId: string;

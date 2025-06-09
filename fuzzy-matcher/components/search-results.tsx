@@ -14,8 +14,8 @@ interface SearchResultsProps {
   isSearching: boolean;
   currentReference: string | null;
   selectedResult: FileMatch | null;
-  selectedFilePaths: Set<string>;
-  selectedReferences: Set<string>;
+  selectedReferences: Array<{ item: string; order: number }>;
+  selectedFilePaths: Array<{ item: string; order: number }>;
   bulkValidation: {
     canBulkMatch: boolean;
     canSingleMatch: boolean;
@@ -49,13 +49,12 @@ export function SearchResults({
   
   // Get visual order for numbering
   const getSelectionNumber = (path: string): number | null => {
-    if (!selectedFilePaths.has(path)) return null;
-    const selectedArray = Array.from(selectedFilePaths);
-    return selectedArray.indexOf(path) + 1;
-  };
+  const found = selectedFilePaths.find(item => item.item === path);
+  return found ? found.order : null;
+};
 
   const handleResultClick = (path: string, score: number) => {
-  if (selectedReferences.size === 0) {
+  if (selectedReferences.length === 0) {
     // Single selection mode
     onResultSelect(path, score);
   } else {
@@ -91,14 +90,14 @@ export function SearchResults({
       {/* Selection Feedback */}
       {bulkValidation.isInBulkMode && (
         <div className="bg-blue-50 border-b border-blue-200 p-3">
-          {selectedReferences.size >= 2 ? (
+          {selectedReferences.length >= 2 ? (
             <div className="text-sm text-blue-800">
-              📋 Bulk Matching Mode: {selectedReferences.size} references selected
+              📋 Bulk Matching Mode: {selectedReferences.length} references selected
               <br />
-              {selectedFilePaths.size < selectedReferences.size && (
-                <span>Select {selectedReferences.size - selectedFilePaths.size} more file path(s)</span>
+              {selectedFilePaths.length < selectedReferences.length && (
+                <span>Select {selectedReferences.length - selectedFilePaths.length} more file path(s)</span>
               )}
-              {selectedFilePaths.size === selectedReferences.size && (
+              {selectedFilePaths.length === selectedReferences.length && (
                 <span className="text-green-600">✓ Ready to confirm bulk match</span>
               )}
             </div>
@@ -129,12 +128,12 @@ export function SearchResults({
               const fileName = parts.pop() || '';
               const pathParts = parts.join('/');
               
-              const isSelected = selectedFilePaths.has(match.path);
+              const isSelected = selectedFilePaths.some(item => item.item === match.path);
               const isSingleSelected = selectedResult?.path === match.path;
               const selectionNumber = getSelectionNumber(match.path);
               
-              const canSelect = selectedReferences.size === 0 || 
-                              selectedFilePaths.size < selectedReferences.size || 
+              const canSelect = selectedReferences.length === 0 || 
+                              selectedFilePaths.length < selectedReferences.length || 
                               isSelected;
 
               return (
@@ -144,7 +143,7 @@ export function SearchResults({
                     bg-gray-50 border rounded-md p-3 cursor-pointer transition-all
                     hover:bg-gray-100 hover:border-emerald-300
                     ${isSelected ? 'bg-emerald-50 border-emerald-300 border-2' : ''}
-                    ${isSingleSelected && selectedReferences.size === 0 ? 'bg-blue-50 border-blue-300 border-2' : ''}
+                    ${isSingleSelected && selectedReferences.length === 0 ? 'bg-blue-50 border-blue-300 border-2' : ''}
                   `}
                   onClick={() => handleResultClick(match.path, match.score)}
                 >
@@ -195,12 +194,12 @@ export function SearchResults({
 
       {/* Action Buttons */}
       <div className="bg-gray-50 border-t p-4 flex gap-2">
-        {selectedReferences.size >= 2 ? (
+        {selectedReferences.length >= 2 ? (
           <Button 
             onClick={onConfirmBulkMatch}
             className="flex-1 bg-blue-600 hover:bg-blue-700"
           >
-            ✓ Confirm Bulk Match ({selectedReferences.size})
+            ✓ Confirm Bulk Match ({selectedReferences.length})
           </Button>
         ) : (
           <>

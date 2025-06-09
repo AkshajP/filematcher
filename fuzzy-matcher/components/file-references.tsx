@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface FileReferencesProps {
   references: string[];
-  selectedReferences: Set<string>;
+  selectedReferences: Array<{ item: string; order: number }>;
   currentReference: string | null;
   originalCount: number;
   onSelectReference: (reference: string) => void;
@@ -30,17 +30,16 @@ export function FileReferences({
   onBulkDeselect,
   onDetectRemaining,
 }: FileReferencesProps) {
-  const selectedCount = selectedReferences.size;
+  const selectedCount = selectedReferences.length;
   const totalCount = references.length;
   const allSelected = selectedCount === totalCount && totalCount > 0;
   const someSelected = selectedCount > 0 && selectedCount < totalCount;
 
   // Get visual order for numbering
   const getSelectionNumber = (reference: string): number | null => {
-    if (!selectedReferences.has(reference)) return null;
-    const selectedArray = Array.from(selectedReferences);
-    return selectedArray.indexOf(reference) + 1;
-  };
+  const found = selectedReferences.find(item => item.item === reference);
+  return found ? found.order : null;
+};
 
   const isGeneratedReference = (reference: string): boolean => {
     const index = references.indexOf(reference);
@@ -92,7 +91,7 @@ export function FileReferences({
         ) : (
           <div className="space-y-2">
             {references.map((reference) => {
-              const isSelected = selectedReferences.has(reference);
+              const isSelected = selectedReferences.some(item => item.item === reference);
               const isActive = reference === currentReference;
               const isGenerated = isGeneratedReference(reference);
               const selectionNumber = getSelectionNumber(reference);

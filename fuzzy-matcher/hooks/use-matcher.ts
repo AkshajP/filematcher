@@ -78,8 +78,8 @@ export function useMatcherLogic() {
 
   // Validation for bulk operations
   const bulkValidation = useMemo(() => {
-    const refCount = matcher.selectedReferences.size;
-    const pathCount = matcher.selectedFilePaths.size;
+    const refCount = matcher.selectedReferences.length;
+const pathCount = matcher.selectedFilePaths.length;
     
     return {
       canBulkMatch: refCount >= 2 && pathCount === refCount,
@@ -87,15 +87,15 @@ export function useMatcherLogic() {
       isInBulkMode: refCount > 0,
       selectionValid: pathCount <= refCount,
     };
-  }, [matcher.selectedReferences.size, matcher.selectedFilePaths.size, matcher.selectedResult]);
+  }, [matcher.selectedReferences.length, matcher.selectedFilePaths.length, matcher.selectedResult]);
 
   // Handle search result selection
   const handleResultSelect = useCallback((path: string, score: number) => {
     // Clear bulk selections when making single selection
-    if (matcher.selectedReferences.size === 0) {
+    if (matcher.selectedReferences.length === 0) {
       matcher.setSelectedResult({ path, score });
     }
-  }, [matcher.selectedReferences.size, matcher.setSelectedResult]);
+  }, [matcher.selectedReferences.length, matcher.setSelectedResult]);
 
   // Export mappings (simplified version)
   const exportMappings = useCallback(() => {
