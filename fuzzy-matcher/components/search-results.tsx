@@ -1,4 +1,4 @@
-// components/search-results.tsx - Search Results Component with Keyboard Navigation
+// fuzzy-matcher/components/search-results.tsx - Enhanced with Multi-Select
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchResult, FileMatch } from "@/lib/types";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 
 interface SearchResultsProps {
   searchTerm: string;
@@ -46,13 +46,73 @@ export function SearchResults({
   onConfirmBulkMatch,
   onSkipReference,
 }: SearchResultsProps) {
-  const [focusedIndex, setFocusedIndex] = useState<number>(-1);
-  const [lastSelectedIndex, setLastSelectedIndex] = useState<number>(-1);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
   const isShowingAllFiles = !searchTerm.trim();
+
+  // Multi-select functionality
+  const [cursorIndex, setCursorIndex] = useState<number>(0);
+  const [rangeAnchor, setRangeAnchor] = useState<number>(-1);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState<boolean>(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  // Update multi-select mode based on selections
+  useEffect(() => {
+    setIsMultiSelectMode(
+      selectedFilePaths.length > 0 || selectedReferences.length > 0
+    );
+  }, [selectedFilePaths.length, selectedReferences.length]);
+
+  // Reset cursor when search results change
+  useEffect(() => {
+    setCursorIndex(0);
+    setRangeAnchor(-1);
+  }, [searchResults]);
+
+  // Auto-scroll functionality
+  const scrollToItem = useCallback((index: number) => {
+    const itemElement = itemRefs.current[index];
+    if (itemElement) {
+      itemElement.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      });
+    }
+  }, []);
+
+  // Auto-scroll when cursor moves
+  useEffect(() => {
+    if (cursorIndex >= 0 && cursorIndex < searchResults.length) {
+      const timeoutId = setTimeout(() => {
+        scrollToItem(cursorIndex);
+      }, 50);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [cursorIndex, scrollToItem, searchResults.length]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      // Check if '/' is pressed and we're not already in an input/textarea
+      if (
+        event.key === "/" &&
+        event.target instanceof Element &&
+        !["INPUT", "TEXTAREA"].includes(event.target.tagName) &&
+        !event.target.isContentEditable
+      ) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select(); // Optional: select all text for easy replacement
+      }
+    };
+
+    // Add to document level to catch it globally
+    document.addEventListener("keydown", handleGlobalKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleGlobalKeyDown);
+    };
+  }, []);
 
   // Get visual order for numbering
   const getSelectionNumber = (path: string): number | null => {
@@ -60,192 +120,200 @@ export function SearchResults({
     return found ? found.order : null;
   };
 
-  // Scroll focused item into view
-  const scrollIntoView = useCallback((index: number) => {
-    if (itemRefs.current[index]) {
-      itemRefs.current[index]?.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-      });
+  const isSelected = (path: string): boolean => {
+    return selectedFilePaths.some((item) => item.item === path);
+  };
+
+  // Handle mouse clicks
+  const handleResultClick = (
+    path: string,
+    score: number,
+    index: number,
+    event: React.MouseEvent
+  ) => {
+    // Prevent text selection when using Shift
+    if (event.shiftKey) {
+      event.preventDefault();
     }
-  }, []);
 
-  // Handle range selection
-  const handleRangeSelection = useCallback(
-    (startIndex: number, endIndex: number) => {
-      const start = Math.min(startIndex, endIndex);
-      const end = Math.max(startIndex, endIndex);
-
-      for (let i = start; i <= end; i++) {
-        if (i >= 0 && i < searchResults.length) {
-          const result = searchResults[i];
-          const isCurrentlySelected = selectedFilePaths.some(
-            (item) => item.item === result.path
-          );
-          const canSelect =
-            selectedReferences.length === 0 ||
-            selectedFilePaths.length < selectedReferences.length ||
-            isCurrentlySelected;
-
-          // Only toggle if not already in desired state and can select
-          if (!isCurrentlySelected && canSelect) {
-            onToggleFilePathSelection(result.path);
-          }
-        }
-      }
-    },
-    [
-      searchResults,
-      selectedFilePaths,
-      selectedReferences.length,
-      onToggleFilePathSelection,
-    ]
-  );
-
-  // Keyboard event handler
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't interfere with search input
-      if (searchInputRef.current?.contains(document.activeElement as Node)) {
-        return;
-      }
-
-      if (!containerRef.current?.contains(document.activeElement)) return;
-
-      const isShiftPressed = e.shiftKey;
-
-      switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault();
-          const nextIndex = Math.min(
-            focusedIndex + 1,
-            searchResults.length - 1
-          );
-          setFocusedIndex(nextIndex);
-          scrollIntoView(nextIndex);
-
-          if (isShiftPressed && lastSelectedIndex !== -1) {
-            handleRangeSelection(lastSelectedIndex, nextIndex);
-          }
-          break;
-
-        case "ArrowUp":
-          e.preventDefault();
-          const prevIndex = Math.max(focusedIndex - 1, 0);
-          setFocusedIndex(prevIndex);
-          scrollIntoView(prevIndex);
-
-          if (isShiftPressed && lastSelectedIndex !== -1) {
-            handleRangeSelection(lastSelectedIndex, prevIndex);
-          }
-          break;
-
-        case " ":
-          e.preventDefault();
-          if (focusedIndex >= 0 && focusedIndex < searchResults.length) {
-            const result = searchResults[focusedIndex];
-            onToggleFilePathSelection(result.path);
-            setLastSelectedIndex(focusedIndex);
-          }
-          break;
-
-        case "Enter":
-          e.preventDefault();
-          if (focusedIndex >= 0 && focusedIndex < searchResults.length) {
-            const result = searchResults[focusedIndex];
-            if (selectedReferences.length === 0) {
-              onResultSelect(result.path, result.score);
-            } else {
-              onToggleFilePathSelection(result.path);
-              setLastSelectedIndex(focusedIndex);
-            }
-          }
-          break;
-
-        case "Escape":
-          e.preventDefault();
-          // Clear selections or focus search input
-          if (selectedFilePaths.length > 0) {
-            selectedFilePaths.forEach((item) =>
-              onToggleFilePathSelection(item.item)
-            );
-          } else {
-            searchInputRef.current?.focus();
-          }
-          setLastSelectedIndex(-1);
-          break;
-
-        case "/":
-          e.preventDefault();
-          searchInputRef.current?.focus();
-          break;
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [
-    focusedIndex,
-    lastSelectedIndex,
-    searchResults,
-    selectedFilePaths,
-    selectedReferences.length,
-    handleRangeSelection,
-    onToggleFilePathSelection,
-    onResultSelect,
-  ]);
-
-  // Reset focus when search results change
-  useEffect(() => {
-    if (searchResults.length > 0 && focusedIndex >= searchResults.length) {
-      setFocusedIndex(0);
-    } else if (searchResults.length > 0 && focusedIndex === -1) {
-      setFocusedIndex(0);
-    }
-  }, [searchResults.length, focusedIndex]);
-
-  const handleResultClick = (path: string, score: number, index: number) => {
-    setFocusedIndex(index);
-    setLastSelectedIndex(index);
-
-    if (selectedReferences.length === 0) {
-      // Single selection mode
-      onResultSelect(path, score);
-    } else {
-      // Bulk selection mode - toggle selection
+    if (event.ctrlKey || event.metaKey) {
+      // Ctrl+Click: Toggle individual selection & enter multi-select mode
       onToggleFilePathSelection(path);
+      setCursorIndex(index);
+      setRangeAnchor(index);
+    } else if (event.shiftKey && rangeAnchor !== -1) {
+      // Shift+Click: Range selection
+      event.preventDefault();
+      handleRangeSelection(rangeAnchor, index);
+      setCursorIndex(index);
+    } else {
+      // Regular click behavior
+      if (selectedReferences.length === 0) {
+        // Single selection mode
+        onResultSelect(path, score);
+      } else {
+        // Bulk selection mode - toggle selection
+        onToggleFilePathSelection(path);
+      }
+      setCursorIndex(index);
+      setRangeAnchor(index);
     }
   };
 
-  const handleCheckboxChange = (
-    path: string,
-    checked: boolean,
-    index: number
-  ) => {
-    setFocusedIndex(index);
-    setLastSelectedIndex(index);
+  // Handle range selection
+  const handleRangeSelection = (startIndex: number, endIndex: number) => {
+    const start = Math.min(startIndex, endIndex);
+    const end = Math.max(startIndex, endIndex);
+
+    // Select all items in range that aren't already selected
+    for (let i = start; i <= end; i++) {
+      const match = searchResults[i];
+      if (match && !isSelected(match.path)) {
+        onToggleFilePathSelection(match.path);
+      }
+    }
+  };
+
+  // Handle keyboard navigation
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (!containerRef.current || searchResults.length === 0) return;
+
+    let handled = false;
+
+    switch (event.key) {
+      case "ArrowDown":
+        if (event.shiftKey) {
+          // Shift+Down: Extend selection downward
+          event.preventDefault();
+          if (cursorIndex < searchResults.length - 1) {
+            const nextIndex = cursorIndex + 1;
+            const match = searchResults[nextIndex];
+            if (match && !isSelected(match.path)) {
+              onToggleFilePathSelection(match.path);
+            }
+            setCursorIndex(nextIndex);
+          }
+        } else {
+          // Down: Move cursor
+          event.preventDefault();
+          if (cursorIndex < searchResults.length - 1) {
+            setCursorIndex(cursorIndex + 1);
+          }
+        }
+        handled = true;
+        break;
+
+      case "ArrowUp":
+        if (event.shiftKey) {
+          // Shift+Up: Shrink selection upward (deselect current if selected)
+          event.preventDefault();
+          const match = searchResults[cursorIndex];
+          if (match && isSelected(match.path)) {
+            onToggleFilePathSelection(match.path);
+          }
+          if (cursorIndex > 0) {
+            setCursorIndex(cursorIndex - 1);
+          }
+        } else {
+          // Up: Move cursor
+          event.preventDefault();
+          if (cursorIndex > 0) {
+            setCursorIndex(cursorIndex - 1);
+          }
+        }
+        handled = true;
+        break;
+
+      case " ":
+        // Space: Toggle selection at cursor
+        event.preventDefault();
+        const match = searchResults[cursorIndex];
+        if (match) {
+          onToggleFilePathSelection(match.path);
+          setRangeAnchor(cursorIndex);
+        }
+        handled = true;
+        break;
+
+      case "Escape":
+        // Escape: Clear selections (handled by parent component)
+        event.preventDefault();
+        // Reset local state
+        setRangeAnchor(-1);
+        handled = true;
+        break;
+
+      case "Enter":
+        // Enter: Confirm selection
+        if (selectedReferences.length >= 2) {
+          event.preventDefault();
+          onConfirmBulkMatch();
+        } else if (selectedResult) {
+          event.preventDefault();
+          onConfirmMatch();
+        }
+        handled = true;
+        break;
+    }
+
+    if (handled) {
+      event.stopPropagation();
+    }
+  };
+
+  // Keyboard event listener
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    container.addEventListener("keydown", handleKeyDown);
+    return () => container.removeEventListener("keydown", handleKeyDown);
+  }, [
+    cursorIndex,
+    searchResults,
+    selectedFilePaths,
+    selectedResult,
+    selectedReferences,
+  ]);
+
+  const handleCheckboxChange = (path: string, checked: boolean) => {
     onToggleFilePathSelection(path);
   };
 
   return (
     <div
       ref={containerRef}
-      className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-full"
+      className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-full focus:outline-none focus:ring-2 focus:ring-emerald-500"
       tabIndex={0}
     >
       {/* Current Reference Display */}
       {(currentReference || selectedReferences.length > 0) && (
         <div className="bg-green-50 border-b border-green-200 p-4">
-          <h4 className="text-sm font-semibold text-green-700 mb-2">
-            Currently Mapping
-          </h4>
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold text-green-700">
+              Currently Mapping
+            </h4>
+
+            {/* Progress badge */}
+            {selectedReferences.length >= 2 && (
+              <Badge
+                variant="outline"
+                className={`text-xs px-2 py-1 font-medium ${
+                  selectedFilePaths.length === selectedReferences.length
+                    ? "border-green-600 text-green-700 bg-green-50"
+                    : "border-red-500 text-red-600 bg-red-50"
+                }`}
+              >
+                {selectedFilePaths.length}/{selectedReferences.length}
+              </Badge>
+            )}
+          </div>
+
           {selectedReferences.length > 0 ? (
             (() => {
-              // Find the next reference that needs a file path
               const refOrders = new Set(selectedReferences.map((r) => r.order));
               const pathOrders = new Set(selectedFilePaths.map((p) => p.order));
 
-              // Find the lowest order number that has a reference but no file path
               let nextOrder = null;
               for (let i = 1; i <= selectedReferences.length; i++) {
                 if (refOrders.has(i) && !pathOrders.has(i)) {
@@ -259,7 +327,7 @@ export function SearchResults({
                   (r) => r.order === nextOrder
                 );
                 return (
-                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                  <div className="flex items-center gap-2 text-sm text-gray-700 mt-1">
                     <div className="bg-emerald-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold">
                       {nextOrder}
                     </div>
@@ -268,14 +336,14 @@ export function SearchResults({
                 );
               } else {
                 return (
-                  <div className="text-sm text-green-600">
+                  <div className="text-sm text-green-600 mt-1">
                     ✓ All positions mapped
                   </div>
                 );
               }
             })()
           ) : (
-            <div className="text-sm text-gray-700">{currentReference}</div>
+            <div className="text-sm text-gray-700 mt-1">{currentReference}</div>
           )}
         </div>
       )}
@@ -284,48 +352,12 @@ export function SearchResults({
       <div className="p-4 border-b">
         <Input
           ref={searchInputRef}
-          placeholder="Search for matching file paths... (Press / to focus)"
+          placeholder="Search for matching file paths..."
           value={searchTerm}
           onChange={(e) => onSearchTermChange(e.target.value)}
           className={`${isSearching ? "animate-pulse" : ""}`}
         />
       </div>
-
-      {/* Keyboard Shortcuts Help */}
-      {bulkValidation.isInBulkMode && (
-        <div className="bg-blue-50 border-b px-3 py-2 text-xs text-blue-700">
-          💡 Use ↑↓ arrows to navigate, Shift+↑↓ for range selection, Space to
-          toggle, Enter to select, / to search
-        </div>
-      )}
-
-      {/* Selection Feedback */}
-      {bulkValidation.isInBulkMode && (
-        <div className="bg-blue-50 border-b border-blue-200 p-3">
-          {selectedReferences.length >= 2 ? (
-            <div className="text-sm text-blue-800">
-              📋 Bulk Matching Mode: {selectedReferences.length} references
-              selected
-              <br />
-              {selectedFilePaths.length < selectedReferences.length && (
-                <span>
-                  Select {selectedReferences.length - selectedFilePaths.length}{" "}
-                  more file path(s)
-                </span>
-              )}
-              {selectedFilePaths.length === selectedReferences.length && (
-                <span className="text-green-600">
-                  ✓ Ready to confirm bulk match
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="text-sm text-yellow-800">
-              ⚠️ Select at least 2 references to enable bulk matching
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Search Results */}
       <ScrollArea className="flex-1 p-3 min-h-0">
@@ -348,27 +380,27 @@ export function SearchResults({
               const fileName = parts.pop() || "";
               const pathParts = parts.join("/");
 
-              const isSelected = selectedFilePaths.some(
-                (item) => item.item === match.path
-              );
+              const isItemSelected = isSelected(match.path);
               const isSingleSelected = selectedResult?.path === match.path;
+              const isCursor = index === cursorIndex;
               const selectionNumber = getSelectionNumber(match.path);
-              const isFocused = index === focusedIndex;
 
               const canSelect =
                 selectedReferences.length === 0 ||
                 selectedFilePaths.length < selectedReferences.length ||
-                isSelected;
+                isItemSelected;
 
               return (
                 <div
                   key={match.path}
-                  ref={(el) => (itemRefs.current[index] = el)}
+                  ref={(el) => {
+                    itemRefs.current[index] = el;
+                  }}
                   className={`
-                    bg-gray-50 border rounded-md p-3 cursor-pointer transition-all
+                    bg-gray-50 border rounded-md p-3 cursor-pointer transition-all relative
                     hover:bg-gray-100 hover:border-emerald-300
                     ${
-                      isSelected
+                      isItemSelected
                         ? "bg-emerald-50 border-emerald-300 border-2"
                         : ""
                     }
@@ -377,22 +409,33 @@ export function SearchResults({
                         ? "bg-blue-50 border-blue-300 border-2"
                         : ""
                     }
-                    ${isFocused ? "ring-2 ring-blue-400 ring-offset-1" : ""}
+                    ${isCursor ? "ring-2 ring-blue-400 ring-offset-1" : ""}
                   `}
-                  onClick={() =>
-                    handleResultClick(match.path, match.score, index)
+                  onClick={(e) =>
+                    handleResultClick(match.path, match.score, index, e)
                   }
+                  onMouseDown={(e) => {
+                    // Prevent text selection on shift+click
+                    if (e.shiftKey) {
+                      e.preventDefault();
+                    }
+                  }}
                 >
+                  {/* Cursor indicator */}
+                  {isCursor && (
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 rounded-l-md"></div>
+                  )}
+
                   <div className="flex items-center gap-3">
                     {/* Selection Indicator */}
-                    {isSelected && selectionNumber ? (
+                    {isItemSelected && selectionNumber ? (
                       <div className="bg-emerald-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold">
                         {selectionNumber}
                       </div>
                     ) : (
                       <div onClick={(e) => e.stopPropagation()}>
                         <Checkbox
-                          checked={isSelected}
+                          checked={isItemSelected}
                           disabled={!canSelect}
                           onCheckedChange={(checked) =>
                             handleCheckboxChange(match.path, !!checked)
@@ -403,10 +446,10 @@ export function SearchResults({
 
                     {/* File Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs text-gray-500 font-mono break-all leading-tight">
+                      <div className="text-xs text-gray-500 font-mono break-all leading-tight select-none">
                         {pathParts}/
                       </div>
-                      <div className="text-sm font-medium text-gray-900 break-words leading-tight">
+                      <div className="text-sm font-medium text-gray-900 break-words leading-tight select-none">
                         {fileName}
                       </div>
                     </div>
@@ -447,16 +490,25 @@ export function SearchResults({
           <Button
             onClick={onConfirmBulkMatch}
             disabled={!bulkValidation.canBulkMatch}
-            className="flex-1 bg-blue-600 hover:bg-blue-700"
+            className={`flex-1 ${
+              bulkValidation.canBulkMatch
+                ? "bg-blue-600 hover:bg-blue-700"
+                : "bg-gray-300 cursor-not-allowed"
+            }`}
           >
-            ✓ Confirm Bulk Match ({selectedReferences.length})
+            ✓ Confirm Bulk Match ({selectedFilePaths.length}/
+            {selectedReferences.length})
           </Button>
         ) : (
           <>
             <Button
               onClick={onConfirmMatch}
               disabled={!bulkValidation.canSingleMatch}
-              className="flex-1 bg-emerald-700 hover:bg-emerald-600"
+              className={`flex-1 ${
+                bulkValidation.canSingleMatch
+                  ? "bg-emerald-700 hover:bg-emerald-600"
+                  : "bg-gray-300 cursor-not-allowed"
+              }`}
             >
               ✓ Confirm Match
             </Button>
@@ -464,6 +516,9 @@ export function SearchResults({
               variant="outline"
               onClick={onSkipReference}
               disabled={!currentReference}
+              className={
+                !currentReference ? "cursor-not-allowed opacity-50" : ""
+              }
             >
               ⏭ Skip
             </Button>

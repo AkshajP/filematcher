@@ -1,14 +1,14 @@
 // hooks/use-matcher.ts - Main Matcher Hook
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { searchMatches } from '@/lib/fuzzy-matcher';
-import { loadDataSources } from '@/lib/data-loader';
-import { SearchResult } from '@/lib/types';
-import { useMatcher } from '@/context/matcher-context';
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { searchMatches } from "@/lib/fuzzy-matcher";
+import { loadDataSources } from "@/lib/data-loader";
+import { SearchResult } from "@/lib/types";
+import { useMatcher } from "@/context/matcher-context";
 
 export function useMatcherLogic() {
   const matcher = useMatcher();
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
@@ -19,12 +19,11 @@ export function useMatcherLogic() {
       try {
         setIsLoading(true);
         const data = await loadDataSources();
-        
+
         // Initialize the matcher context with data
         matcher.initializeData(data.fileReferences, data.filePaths);
-        
       } catch (error) {
-        console.error('Failed to initialize data:', error);
+        console.error("Failed to initialize data:", error);
       } finally {
         setIsLoading(false);
       }
@@ -45,11 +44,15 @@ export function useMatcherLogic() {
     }
 
     setIsSearching(true);
-    
+
     // Use debouncing for better performance
     const timeoutId = setTimeout(() => {
-      const term = searchTerm || matcher.currentReference || '';
-      const results = searchMatches(term, matcher.filePaths, matcher.usedFilePaths);
+      const term = searchTerm || matcher.currentReference || "";
+      const results = searchMatches(
+        term,
+        matcher.filePaths,
+        matcher.usedFilePaths
+      );
       setSearchResults(results);
       setIsSearching(false);
     }, 300);
@@ -57,14 +60,23 @@ export function useMatcherLogic() {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [searchTerm, matcher.currentReference, matcher.filePaths, matcher.usedFilePaths]);
+  }, [
+    searchTerm,
+    matcher.currentReference,
+    matcher.filePaths,
+    matcher.usedFilePaths,
+  ]);
 
   // Auto-select first reference when available
   useEffect(() => {
     if (!matcher.currentReference && matcher.unmatchedReferences.length > 0) {
       matcher.selectReference(matcher.unmatchedReferences[0]);
     }
-  }, [matcher.unmatchedReferences.length, matcher.currentReference, matcher.selectReference]);
+  }, [
+    matcher.unmatchedReferences.length,
+    matcher.currentReference,
+    matcher.selectReference,
+  ]);
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -74,52 +86,65 @@ export function useMatcherLogic() {
     const progress = total > 0 ? Math.round((matched / total) * 100) : 0;
 
     return { total, matched, unmatched, progress };
-  }, [matcher.fileReferences.length, matcher.matchedPairs.length, matcher.unmatchedReferences.length]);
+  }, [
+    matcher.fileReferences.length,
+    matcher.matchedPairs.length,
+    matcher.unmatchedReferences.length,
+  ]);
 
   // Validation for bulk operations
   const bulkValidation = useMemo(() => {
     const refCount = matcher.selectedReferences.length;
-const pathCount = matcher.selectedFilePaths.length;
-    
+    const pathCount = matcher.selectedFilePaths.length;
+
     return {
       canBulkMatch: refCount >= 2 && pathCount === refCount,
       canSingleMatch: refCount === 0 && !!matcher.selectedResult,
       isInBulkMode: refCount > 0,
       selectionValid: pathCount <= refCount,
     };
-  }, [matcher.selectedReferences.length, matcher.selectedFilePaths.length, matcher.selectedResult]);
+  }, [
+    matcher.selectedReferences.length,
+    matcher.selectedFilePaths.length,
+    matcher.selectedResult,
+  ]);
 
   // Handle search result selection
-  const handleResultSelect = useCallback((path: string, score: number) => {
-    // Clear bulk selections when making single selection
-    if (matcher.selectedReferences.length === 0) {
-      matcher.setSelectedResult({ path, score });
-    }
-  }, [matcher.selectedReferences.length, matcher.setSelectedResult]);
+  const handleResultSelect = useCallback(
+    (path: string, score: number) => {
+      // Clear bulk selections when making single selection
+      if (matcher.selectedReferences.length === 0) {
+        matcher.setSelectedResult({ path, score });
+      }
+    },
+    [matcher.selectedReferences.length, matcher.setSelectedResult]
+  );
 
   // Export mappings (simplified version)
   const exportMappings = useCallback(() => {
     const csvData = [
-      ['File Reference', 'File Path', 'Match Score', 'Timestamp', 'Method'],
-      ...matcher.matchedPairs.map(pair => [
+      ["File Reference", "File Path", "Match Score", "Timestamp", "Method"],
+      ...matcher.matchedPairs.map((pair) => [
         pair.reference,
         pair.path,
         `${(pair.score * 100).toFixed(1)}%`,
         pair.timestamp,
-        pair.method
-      ])
+        pair.method,
+      ]),
     ];
 
-    const csvContent = csvData.map(row => 
-      row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(',')
-    ).join('\n');
+    const csvContent = csvData
+      .map((row) =>
+        row.map((field) => `"${String(field).replace(/"/g, '""')}"`).join(",")
+      )
+      .join("\n");
 
     // Create and download blob
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const blob = new Blob([csvContent], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `file_mappings_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `file_mappings_${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
 
