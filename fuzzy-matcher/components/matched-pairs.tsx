@@ -15,7 +15,7 @@ export function MatchedPairs({ matchedPairs, onRemoveMatch }: MatchedPairsProps)
       {/* Header */}
       <div className="bg-emerald-700 text-white p-4 flex justify-between items-center">
         <h2 className="text-lg font-semibold flex items-center gap-2">
-          ✅ Completed Mappings
+           Completed Mappings
         </h2>
         <Badge className="bg-white/20 text-white">
           {matchedPairs.length}

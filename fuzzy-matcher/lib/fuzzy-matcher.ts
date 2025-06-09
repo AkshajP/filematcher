@@ -70,7 +70,7 @@ export function calculateFuzzyScore(filePath: string, searchTerm: string): numbe
     const pathScore = calculateSimilarity(pathParts, searchPath);
     const fileScore = calculateSimilarity(fileName, searchFile);
     
-    return (fileScore * 0.7) + (pathScore * 0.3);
+    return (fileScore * 0.7) + (pathScore * 0.5);
   }
   
   const fileNameScore = calculateSimilarity(fileName, searchTerm);
@@ -81,7 +81,7 @@ export function calculateFuzzyScore(filePath: string, searchTerm: string): numbe
     bestFolderScore = Math.max(bestFolderScore, folderScore);
   }
   
-  return Math.max(fileNameScore * 0.7 + bestFolderScore * 0.3, bestFolderScore * 0.8);
+  return Math.max(fileNameScore * 0.8 + bestFolderScore * 0.3, bestFolderScore * 0.8);
 }
 
 /**
