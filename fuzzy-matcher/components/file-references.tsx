@@ -1,10 +1,10 @@
 // components/file-references.tsx - File References Component with Keyboard Navigation
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 interface FileReferencesProps {
   references: string[];
@@ -42,7 +42,7 @@ export function FileReferences({
 
   // Get visual order for numbering
   const getSelectionNumber = (reference: string): number | null => {
-    const found = selectedReferences.find(item => item.item === reference);
+    const found = selectedReferences.find((item) => item.item === reference);
     return found ? found.order : null;
   };
 
@@ -55,66 +55,71 @@ export function FileReferences({
   const scrollIntoView = useCallback((index: number) => {
     if (itemRefs.current[index]) {
       itemRefs.current[index]?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
+        behavior: "smooth",
+        block: "nearest",
       });
     }
   }, []);
 
   // Handle range selection
-  const handleRangeSelection = useCallback((startIndex: number, endIndex: number) => {
-    const start = Math.min(startIndex, endIndex);
-    const end = Math.max(startIndex, endIndex);
-    
-    for (let i = start; i <= end; i++) {
-      if (i >= 0 && i < references.length) {
-        const reference = references[i];
-        const isCurrentlySelected = selectedReferences.some(item => item.item === reference);
-        
-        // Only toggle if not already in desired state
-        if (!isCurrentlySelected) {
-          onToggleSelection(reference);
+  const handleRangeSelection = useCallback(
+    (startIndex: number, endIndex: number) => {
+      const start = Math.min(startIndex, endIndex);
+      const end = Math.max(startIndex, endIndex);
+
+      for (let i = start; i <= end; i++) {
+        if (i >= 0 && i < references.length) {
+          const reference = references[i];
+          const isCurrentlySelected = selectedReferences.some(
+            (item) => item.item === reference
+          );
+
+          // Only toggle if not already in desired state
+          if (!isCurrentlySelected) {
+            onToggleSelection(reference);
+          }
         }
       }
-    }
-  }, [references, selectedReferences, onToggleSelection]);
+    },
+    [references, selectedReferences, onToggleSelection]
+  );
 
   // Keyboard event handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!containerRef.current?.contains(document.activeElement)) return;
-      
+
       const isShiftPressed = e.shiftKey;
-      
+
       switch (e.key) {
-        case 'ArrowDown':
+        case "ArrowDown":
           e.preventDefault();
           const nextIndex = Math.min(focusedIndex + 1, references.length - 1);
           setFocusedIndex(nextIndex);
           scrollIntoView(nextIndex);
-          
+
           if (isShiftPressed && lastSelectedIndex !== -1) {
             handleRangeSelection(lastSelectedIndex, nextIndex);
           }
           break;
-          
-        case 'ArrowUp':
+
+        case "ArrowUp":
           e.preventDefault();
           const prevIndex = Math.max(focusedIndex - 1, 0);
           setFocusedIndex(prevIndex);
           scrollIntoView(prevIndex);
-          
+
           if (isShiftPressed && lastSelectedIndex !== -1) {
             handleRangeSelection(lastSelectedIndex, prevIndex);
           }
           break;
-          
-        case ' ':
-        case 'Enter':
+
+        case " ":
+        case "Enter":
           e.preventDefault();
           if (focusedIndex >= 0 && focusedIndex < references.length) {
             const reference = references[focusedIndex];
-            if (e.key === ' ') {
+            if (e.key === " ") {
               onToggleSelection(reference);
               setLastSelectedIndex(focusedIndex);
             } else {
@@ -122,8 +127,8 @@ export function FileReferences({
             }
           }
           break;
-          
-        case 'Escape':
+
+        case "Escape":
           e.preventDefault();
           onBulkDeselect();
           setLastSelectedIndex(-1);
@@ -131,9 +136,18 @@ export function FileReferences({
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [focusedIndex, lastSelectedIndex, references, handleRangeSelection, onToggleSelection, onSelectReference, onBulkDeselect, scrollIntoView]);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [
+    focusedIndex,
+    lastSelectedIndex,
+    references,
+    handleRangeSelection,
+    onToggleSelection,
+    onSelectReference,
+    onBulkDeselect,
+    scrollIntoView,
+  ]);
 
   // Initialize focus on first item
   useEffect(() => {
@@ -149,7 +163,11 @@ export function FileReferences({
     onSelectReference(reference);
   };
 
-  const handleToggleClick = (reference: string, index: number, e: React.MouseEvent) => {
+  const handleToggleClick = (
+    reference: string,
+    index: number,
+    e: React.MouseEvent
+  ) => {
     e.stopPropagation();
     setFocusedIndex(index);
     setLastSelectedIndex(index);
@@ -157,7 +175,7 @@ export function FileReferences({
   };
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-full"
       tabIndex={0}
@@ -182,21 +200,37 @@ export function FileReferences({
       {/* Keyboard Shortcuts Help */}
       {selectedCount > 0 && (
         <div className="bg-blue-50 border-b px-3 py-2 text-xs text-blue-700">
-          💡 Use ↑↓ arrows to navigate, Shift+↑↓ for range selection, Space to toggle, Enter to select
+          💡 Use ↑↓ arrows to navigate, Shift+↑↓ for range selection, Space to
+          toggle, Enter to select
         </div>
       )}
 
       {/* Bulk Actions */}
       {selectedCount > 0 && (
         <div className="bg-gray-50 border-b p-3 flex gap-2 flex-wrap">
-          <Button size="sm" variant="outline" onClick={onBulkSkip} className="text-xs">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onBulkSkip}
+            className="text-xs"
+          >
             ⏭ Skip Selected
           </Button>
-          <Button size="sm" variant="outline" onClick={onBulkDeselect} className="text-xs">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onBulkDeselect}
+            className="text-xs"
+          >
             ✕ Deselect All
           </Button>
           <div className="ml-auto">
-            <Button size="sm" variant="outline" onClick={onDetectRemaining} className="text-xs">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onDetectRemaining}
+              className="text-xs"
+            >
               📄 Detect Remaining
             </Button>
           </div>
@@ -212,7 +246,9 @@ export function FileReferences({
         ) : (
           <div className="space-y-2">
             {references.map((reference, index) => {
-              const isSelected = selectedReferences.some(item => item.item === reference);
+              const isSelected = selectedReferences.some(
+                (item) => item.item === reference
+              );
               const isActive = reference === currentReference;
               const isGenerated = isGeneratedReference(reference);
               const selectionNumber = getSelectionNumber(reference);
@@ -225,10 +261,18 @@ export function FileReferences({
                   className={`
                     bg-gray-50 border rounded-md p-3 cursor-pointer transition-all
                     hover:bg-gray-100 hover:border-emerald-300
-                    ${isSelected ? 'bg-emerald-50 border-emerald-300 border-2' : ''}
-                    ${isActive ? 'bg-green-50 border-green-300 border-2' : ''}
-                    ${isSelected && isActive ? 'bg-gradient-to-r from-emerald-50 to-green-50' : ''}
-                    ${isFocused ? 'ring-2 ring-blue-400 ring-offset-1' : ''}
+                    ${
+                      isSelected
+                        ? "bg-emerald-50 border-emerald-300 border-2"
+                        : ""
+                    }
+                    ${isActive ? "bg-green-50 border-green-300 border-2" : ""}
+                    ${
+                      isSelected && isActive
+                        ? "bg-gradient-to-r from-emerald-50 to-green-50"
+                        : ""
+                    }
+                    ${isFocused ? "ring-2 ring-blue-400 ring-offset-1" : ""}
                   `}
                   onClick={() => handleItemClick(reference, index)}
                 >
@@ -239,11 +283,12 @@ export function FileReferences({
                         {selectionNumber}
                       </div>
                     ) : (
-                      <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={() => handleToggleClick(reference, index, {} as React.MouseEvent)}
-                        onClick={(e) => handleToggleClick(reference, index, e)}
-                      />
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => onToggleSelection(reference)}
+                        />
+                      </div>
                     )}
 
                     {/* Reference Text */}
@@ -252,9 +297,13 @@ export function FileReferences({
                     </div>
 
                     {/* Type Badge */}
-                    <Badge 
+                    <Badge
                       variant={isGenerated ? "default" : "secondary"}
-                      className={isGenerated ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"}
+                      className={
+                        isGenerated
+                          ? "bg-yellow-100 text-yellow-800"
+                          : "bg-green-100 text-green-800"
+                      }
                     >
                       {isGenerated ? "AUTO" : "ORIG"}
                     </Badge>
