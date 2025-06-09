@@ -1,3 +1,5 @@
 file_matcher/*
 file_matcher.zip
 *.txt
+.DS_Store
+*.csv
