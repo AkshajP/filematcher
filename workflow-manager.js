@@ -6,11 +6,29 @@ function toggleReferenceSelection(reference, event) {
     
     if (window.selectedReferences.has(reference)) {
         window.selectedReferences.delete(reference);
+        
+        // If we removed a reference and now have more paths than references, remove excess paths
+        if (window.selectedFilePaths.size > window.selectedReferences.size) {
+            const pathsArray = Array.from(window.selectedFilePaths);
+            const excessPaths = pathsArray.slice(window.selectedReferences.size);
+            excessPaths.forEach(path => window.selectedFilePaths.delete(path));
+        }
     } else {
         window.selectedReferences.add(reference);
+        
+        // Clear single selection when entering bulk mode
+        if (window.selectedReferences.size === 1) {
+            window.selectedResult = null;
+            document.querySelectorAll('.result-item.single-selected').forEach(el => {
+                el.classList.remove('single-selected');
+            });
+        }
     }
     
-    // Re-render both lists to update selection numbers
+    // Immediate visual update before full re-render
+    updateVisualSelection();
+    
+    // Re-render both lists to update selection numbers and states
     updateUnmatchedList();
     if (window.currentReference) {
         updateSearchResults();
@@ -22,12 +40,29 @@ function selectAllReferences() {
     const selectAll = document.getElementById('selectAllCheckbox').checked;
     
     if (selectAll) {
+        // Clear single selections when entering bulk mode
+        window.selectedResult = null;
+        document.querySelectorAll('.result-item.single-selected').forEach(el => {
+            el.classList.remove('single-selected');
+        });
+        
         for (const ref of window.unmatchedReferences) {
             window.selectedReferences.add(ref);
         }
+        
+        // Clear excess file path selections if any
+        if (window.selectedFilePaths.size > window.selectedReferences.size) {
+            const pathsArray = Array.from(window.selectedFilePaths);
+            const excessPaths = pathsArray.slice(window.selectedReferences.size);
+            excessPaths.forEach(path => window.selectedFilePaths.delete(path));
+        }
     } else {
         window.selectedReferences.clear();
+        window.selectedFilePaths.clear();
     }
+    
+    // Immediate visual update
+    updateVisualSelection();
     
     updateAllUI();
 }
@@ -45,6 +80,10 @@ function bulkSkipReferences() {
     }
     
     window.selectedReferences.clear();
+    window.selectedFilePaths.clear();
+    
+    // Immediate visual feedback
+    showNotification(`Moved ${selected.length} references to end of list`, 'info');
     
     // Select next available reference
     if (window.unmatchedReferences.length > 0) {
@@ -55,7 +94,19 @@ function bulkSkipReferences() {
 }
 
 function bulkDeselectAll() {
+    const prevRefCount = window.selectedReferences.size;
+    const prevPathCount = window.selectedFilePaths.size;
+    
     window.selectedReferences.clear();
+    window.selectedFilePaths.clear();
+    
+    // Immediate visual feedback
+    if (prevRefCount > 0 || prevPathCount > 0) {
+        showNotification(`Cleared ${prevRefCount} reference(s) and ${prevPathCount} file path(s)`, 'info');
+    }
+    
+    // Immediate visual update
+    updateVisualSelection();
     updateSelectionUI();
 }
 
@@ -105,6 +156,15 @@ function isGeneratedReference(reference) {
 
 // Select reference for mapping
 function selectReference(reference) {
+    // If we're in bulk selection mode (2+ references selected), don't change current reference
+    if (window.selectedReferences.size >= 2) {
+        return;
+    }
+    
+    // Clear all bulk selections when selecting a single reference
+    window.selectedReferences.clear();
+    window.selectedFilePaths.clear();
+    
     window.currentReference = reference;
     window.selectedResult = null;
     
@@ -113,6 +173,9 @@ function selectReference(reference) {
     document.getElementById('searchInput').value = '';
     document.getElementById('confirmMatchBtn').disabled = true;
     document.getElementById('skipBtn').disabled = false;
+    
+    // Immediate visual update
+    updateVisualSelection();
     
     updateAllUI();
 }
@@ -201,8 +264,26 @@ async function confirmBulkMatch() {
     const refsToMatch = Array.from(window.selectedReferences);
     const pathsToMatch = Array.from(window.selectedFilePaths);
 
-    if (refsToMatch.length === 0 || refsToMatch.length !== pathsToMatch.length) {
+    // Validation checks
+    if (refsToMatch.length < 2) {
+        showNotification("Please select at least 2 references for bulk matching.", "error");
+        return;
+    }
+
+    if (refsToMatch.length !== pathsToMatch.length) {
         showNotification("Selection count for references and files must match.", "error");
+        return;
+    }
+
+    if (refsToMatch.length === 0 || pathsToMatch.length === 0) {
+        showNotification("Please select references and corresponding files.", "error");
+        return;
+    }
+
+    // Final validation
+    const validation = validateSelections();
+    if (!validation.canBulkMatch) {
+        showNotification("Invalid selection state for bulk matching.", "error");
         return;
     }
 
@@ -211,75 +292,84 @@ async function confirmBulkMatch() {
     }
 
     // Show loading state
+    showBulkProcessing(true);
     showNotification(`Matching ${refsToMatch.length} pairs...`, 'info');
 
-    // We need to match based on the visual order.
-    // Get the ordered lists from the DOM.
-    const orderedRefs = Array.from(document.querySelectorAll('#unmatchedList .reference-item'))
-        .map(el => el.querySelector('.reference-text').textContent)
-        .filter(ref => window.selectedReferences.has(ref));
-    
-    const orderedPaths = Array.from(document.querySelectorAll('#searchResults .result-item'))
-        .map(el => el.dataset.path)
-        .filter(path => window.selectedFilePaths.has(path));
+    try {
+        // We need to match based on the visual order.
+        // Get the ordered lists from the DOM.
+        const orderedRefs = Array.from(document.querySelectorAll('#unmatchedList .reference-item'))
+            .map(el => el.querySelector('.reference-text').textContent)
+            .filter(ref => window.selectedReferences.has(ref));
+        
+        const orderedPaths = Array.from(document.querySelectorAll('#searchResults .result-item'))
+            .map(el => el.dataset.path)
+            .filter(path => window.selectedFilePaths.has(path));
 
-    for (let i = 0; i < orderedRefs.length; i++) {
-        const ref = orderedRefs[i];
-        const path = orderedPaths[i];
-
-        // Add to matched pairs
-        window.matchedPairs.push({
-            reference: ref,
-            path: path,
-            score: 1.0, // Manual match is considered 100%
-            timestamp: new Date().toISOString(),
-            method: 'manual-bulk',
-            sessionId: window.sessionId || 'default'
-        });
-
-        // Mark as used
-        window.usedFilePaths.add(path);
-
-        // Remove from unmatched
-        const index = window.unmatchedReferences.indexOf(ref);
-        if (index > -1) {
-            window.unmatchedReferences.splice(index, 1);
+        if (orderedRefs.length !== orderedPaths.length) {
+            throw new Error("Ordering mismatch between references and paths");
         }
-    }
 
-    // Clear selections BEFORE updating UI
-    window.selectedReferences.clear();
-    window.selectedFilePaths.clear();
+        for (let i = 0; i < orderedRefs.length; i++) {
+            const ref = orderedRefs[i];
+            const path = orderedPaths[i];
 
-    // Save session
-    if (window.cacheManager) {
-        try {
+            // Add to matched pairs
+            window.matchedPairs.push({
+                reference: ref,
+                path: path,
+                score: 1.0, // Manual match is considered 100%
+                timestamp: new Date().toISOString(),
+                method: 'manual-bulk',
+                sessionId: window.sessionId || 'default'
+            });
+
+            // Mark as used
+            window.usedFilePaths.add(path);
+
+            // Remove from unmatched
+            const index = window.unmatchedReferences.indexOf(ref);
+            if (index > -1) {
+                window.unmatchedReferences.splice(index, 1);
+            }
+        }
+
+        // Clear selections BEFORE updating UI
+        window.selectedReferences.clear();
+        window.selectedFilePaths.clear();
+
+        // Save session
+        if (window.cacheManager) {
             await window.cacheManager.saveSession();
-        } catch (error) {
-            console.error('Failed to save session:', error);
         }
-    }
 
-    // Show success notification
-    showNotification(`Successfully matched ${orderedRefs.length} pairs!`, 'success');
-    
-    // Update ALL UI components properly
-    if (window.unmatchedReferences.length > 0) {
-        // Select the first unmatched reference
-        selectReference(window.unmatchedReferences[0]);
-    } else {
-        // No more references - clear the search panel
-        window.currentReference = null;
-        window.selectedResult = null;
-        document.getElementById('currentReference').style.display = 'none';
-        document.getElementById('searchInput').value = '';
-        document.getElementById('searchResults').innerHTML = '🎉 All references have been matched!';
-        document.getElementById('confirmMatchBtn').disabled = true;
-        document.getElementById('skipBtn').disabled = true;
+        // Show success notification
+        showNotification(`Successfully matched ${orderedRefs.length} pairs!`, 'success');
+        
+        // Update ALL UI components properly
+        if (window.unmatchedReferences.length > 0) {
+            // Select the first unmatched reference
+            selectReference(window.unmatchedReferences[0]);
+        } else {
+            // No more references - clear the search panel
+            window.currentReference = null;
+            window.selectedResult = null;
+            document.getElementById('currentReference').style.display = 'none';
+            document.getElementById('searchInput').value = '';
+            document.getElementById('searchResults').innerHTML = '🎉 All references have been matched!';
+            document.getElementById('confirmMatchBtn').disabled = true;
+            document.getElementById('skipBtn').disabled = true;
+        }
+        
+        // Force complete UI update
+        updateAllUI();
+
+    } catch (error) {
+        console.error('Bulk matching failed:', error);
+        showNotification(`Bulk matching failed: ${error.message}`, 'error');
+    } finally {
+        showBulkProcessing(false);
     }
-    
-    // Force complete UI update
-    updateAllUI();
 }
 
 // Add visual feedback during bulk operations

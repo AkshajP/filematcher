@@ -18,6 +18,15 @@ function updateAllUI() {
     if (window.currentReference) {
         updateSearchResults();
     }
+    
+    // Ensure visual states are synchronized
+    syncVisualStates();
+}
+
+function updateVisualSelection() {
+    syncVisualStates();
+    updateBulkActionUI();
+    updateSelectionFeedback();
 }
 
 // Initialize virtual scrollers
@@ -46,6 +55,9 @@ function updateSearchResults() {
     
     const searchTerm = searchInput.value.trim();
     
+    // Validate selections before proceeding
+    validateSelections();
+    
     // Use Web Worker for search if available
     if (window.matcherManager) {
         // Show loading state
@@ -65,6 +77,7 @@ function updateSearchResults() {
                 confirmBtn.disabled = true;
                 window.selectedResult = null;
                 renderSuggestions(null);
+                updateSelectionFeedback(); // Add feedback even when no results
                 return;
             }
             
@@ -88,6 +101,7 @@ function updateSearchResults() {
             confirmBtn.disabled = true;
             window.selectedResult = null;
             renderSuggestions(null);
+            updateSelectionFeedback(); // Add feedback even when no results
             return;
         }
         
@@ -102,6 +116,8 @@ function updateSearchResults() {
  * @param {Array<Object>} matches - The array of search result objects.
  * @param {string} searchTerm - The term that was searched for.
  */
+// ui-manager.js - Fixed renderSearchResults with proper visual feedback
+
 function renderSearchResults(matches, searchTerm) {
     const searchResults = document.getElementById('searchResults');
     const isShowingAllFiles = !searchTerm.trim();
@@ -113,8 +129,22 @@ function renderSearchResults(matches, searchTerm) {
         return;
     }
 
-    // Get ordered arrays for numbered selection
-    const selectedFilePaths = Array.from(window.selectedFilePaths);
+    // Get VISUAL order of selected paths from current DOM (important for numbering)
+    let visualPathOrder = [];
+    const existingResults = document.querySelectorAll('#searchResults .result-item');
+    existingResults.forEach(item => {
+        const path = item.dataset.path;
+        if (window.selectedFilePaths.has(path)) {
+            visualPathOrder.push(path);
+        }
+    });
+
+    // Add any new selections that aren't in visual order yet
+    Array.from(window.selectedFilePaths).forEach(path => {
+        if (!visualPathOrder.includes(path)) {
+            visualPathOrder.push(path);
+        }
+    });
 
     // Regular rendering for smaller result sets
     searchResults.innerHTML = matches.map((match) => {
@@ -124,7 +154,7 @@ function renderSearchResults(matches, searchTerm) {
         
         // Check if this file path is selected for bulk matching
         const isSelected = window.selectedFilePaths.has(match.path);
-        const selectionIndex = selectedFilePaths.indexOf(match.path);
+        const selectionIndex = visualPathOrder.indexOf(match.path);
         const selectionNumber = selectionIndex >= 0 ? selectionIndex + 1 : null;
 
         // Learning engine UI integration
@@ -149,11 +179,26 @@ function renderSearchResults(matches, searchTerm) {
         if (isSelected && selectionNumber) {
             selectionIndicator = `<div class="selection-number">${selectionNumber}</div>`;
         } else {
-            selectionIndicator = `<input type="checkbox" class="result-checkbox" data-path="${match.path}" ${isSelected ? 'checked' : ''}>`;
+            // Checkbox is enabled when:
+            // 1. No references selected (single mode) - always allow
+            // 2. In bulk mode but haven't exceeded reference count
+            // 3. This item is already selected
+            const canSelect = window.selectedReferences.size === 0 || 
+                            window.selectedFilePaths.size < window.selectedReferences.size || 
+                            isSelected;
+            const checkboxDisabled = !canSelect ? 'disabled' : '';
+            selectionIndicator = `<input type="checkbox" class="result-checkbox" data-path="${match.path}" ${isSelected ? 'checked' : ''} ${checkboxDisabled}>`;
         }
+
+        // Apply proper CSS classes for visual feedback
+        const selectedClass = isSelected ? 'selected' : '';
+        const singleSelectedClass = window.selectedResult && window.selectedResult.path === match.path ? 'single-selected' : '';
         
         return `
-            <div class="result-item ${isSelected ? 'selected' : ''} ${learnedClass}" data-path="${match.path}" data-score="${match.score}" title="${scoreTitle}">
+            <div class="result-item ${selectedClass} ${singleSelectedClass} ${learnedClass}" 
+                 data-path="${match.path}" 
+                 data-score="${match.score}" 
+                 title="${scoreTitle}">
                 ${selectionIndicator}
                 ${learnedIcon}
                 <div class="file-item">
@@ -172,23 +217,25 @@ function renderSearchResults(matches, searchTerm) {
             // Do nothing if the click was on the checkbox itself
             if (e.target.type === 'checkbox') return;
 
-            // Clear any bulk selections (both references and paths)
-            window.selectedReferences.clear();
-            window.selectedFilePaths.clear();
-            
-            // Update the unmatched list to remove 'selected' styles
-            updateUnmatchedList(); 
-
-            // Handle single item selection
-            for (const resultItem of resultItems) {
-                resultItem.classList.remove('selected');
+            // Only clear bulk selections if we're not in bulk mode (no references selected)
+            if (window.selectedReferences.size === 0) {
+                window.selectedFilePaths.clear();
+                
+                // Clear previous single selection styling
+                resultItems.forEach(el => el.classList.remove('single-selected'));
+                
+                // Apply single selection styling
+                item.classList.add('single-selected');
+                
+                window.selectedResult = {
+                    path: item.getAttribute('data-path'),
+                    score: parseFloat(item.getAttribute('data-score'))
+                };
+                
+                // Update the unmatched list to remove bulk selection styles
+                updateUnmatchedList(); 
             }
-            item.classList.add('selected');
-            
-            window.selectedResult = {
-                path: item.getAttribute('data-path'),
-                score: parseFloat(item.getAttribute('data-score'))
-            };
+            // If in bulk mode, clicking items should not affect selections
             
             // Update the entire UI, which handles button states
             updateBulkActionUI();
@@ -196,33 +243,41 @@ function renderSearchResults(matches, searchTerm) {
     }
 
     // Add event listeners for the result checkboxes for bulk selection
-    const resultCheckboxes = document.querySelectorAll('.result-checkbox');
+    const resultCheckboxes = document.querySelectorAll('.result-checkbox:not([disabled])');
     for (const checkbox of resultCheckboxes) {
         checkbox.addEventListener('change', (e) => {
             const path = e.target.dataset.path;
+            
             if (e.target.checked) {
-                window.selectedFilePaths.add(path);
+                // Only allow selection if we haven't exceeded reference count
+                if (window.selectedFilePaths.size < window.selectedReferences.size) {
+                    window.selectedFilePaths.add(path);
+                } else {
+                    e.target.checked = false;
+                    showNotification('Cannot select more files than selected references', 'warning');
+                    return;
+                }
             } else {
                 window.selectedFilePaths.delete(path);
             }
             
-            // Clear single selection when a checkbox is used
+            // Clear single selection when using checkboxes
             window.selectedResult = null; 
-            document.querySelectorAll('.result-item.selected').forEach(el => {
-                 if (!window.selectedFilePaths.has(el.dataset.path)) {
-                    el.classList.remove('selected');
-                 }
-            });
+            resultItems.forEach(el => el.classList.remove('single-selected'));
 
-            // Re-render to update numbers
+            // Re-render to update numbers and visual states
             renderSearchResults(matches, searchTerm);
             updateBulkActionUI();
         });
     }
 
+    // Update selection feedback
+    updateSelectionFeedback();
+    
     // After rendering, ensure the button states are correct.
     updateBulkActionUI();
 }
+    
 
 // Function to render learning suggestions
 function renderSuggestions(suggestions) {
@@ -262,8 +317,22 @@ function updateUnmatchedList() {
         return;
     }
     
-    // Get ordered arrays for numbered selection
-    const selectedReferences = Array.from(window.selectedReferences);
+    // Get VISUAL order of selected references from current DOM (important for numbering)
+    let visualRefOrder = [];
+    const existingRefs = document.querySelectorAll('#unmatchedList .reference-item');
+    existingRefs.forEach(item => {
+        const ref = item.querySelector('.reference-text')?.textContent;
+        if (ref && window.selectedReferences.has(ref)) {
+            visualRefOrder.push(ref);
+        }
+    });
+
+    // Add any new selections that aren't in visual order yet
+    Array.from(window.selectedReferences).forEach(ref => {
+        if (!visualRefOrder.includes(ref)) {
+            visualRefOrder.push(ref);
+        }
+    });
     
     // Regular rendering for small lists
     unmatchedList.innerHTML = window.unmatchedReferences.map(reference => {
@@ -271,7 +340,7 @@ function updateUnmatchedList() {
         const isActive = reference === window.currentReference;
         const isGenerated = isGeneratedReference(reference);
         
-        const selectionIndex = selectedReferences.indexOf(reference);
+        const selectionIndex = visualRefOrder.indexOf(reference);
         const selectionNumber = selectionIndex >= 0 ? selectionIndex + 1 : null;
         
         // Selection indicator - show number if selected, checkbox if not
@@ -283,9 +352,13 @@ function updateUnmatchedList() {
                        ${isSelected ? 'checked' : ''}
                        onclick="toggleReferenceSelection('${reference.replace(/'/g, "\\'")}', event)">`;
         }
+
+        // Apply proper CSS classes for visual feedback
+        const selectedClass = isSelected ? 'selected' : '';
+        const activeClass = isActive ? 'active' : '';
         
         return `
-            <div class="reference-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}" 
+            <div class="reference-item ${activeClass} ${selectedClass}" 
                  onclick="selectReference('${reference.replace(/'/g, "\\'")}')">
                 ${selectionIndicator}
                 <div class="reference-text">${reference}</div>
@@ -367,10 +440,11 @@ function updateSelectionUI() {
     } else {
         bulkActions.classList.add('hidden');
     }
+    
     updateUnmatchedList();
     updateBulkActionUI();
+    updateSelectionFeedback(); // Add this line
 }
-
 /**
  * Central function to manage the visibility and state of action buttons.
  */
@@ -383,8 +457,8 @@ function updateBulkActionUI() {
     const refCount = window.selectedReferences.size;
     const pathCount = window.selectedFilePaths.size;
 
-    // Condition for showing the bulk match button
-    if (refCount > 0 && pathCount > 0 && refCount === pathCount) {
+    // Condition for showing the bulk match button: 2+ references AND equal path count
+    if (refCount >= 2 && pathCount > 0 && refCount === pathCount) {
         bulkConfirmBtn.style.display = 'inline-flex';
         confirmBtn.style.display = 'none';
         skipBtn.style.display = 'none';
@@ -395,7 +469,8 @@ function updateBulkActionUI() {
         skipBtn.style.display = 'inline-flex';
 
         // Re-evaluate single confirm button state
-        confirmBtn.disabled = !window.selectedResult || window.selectedReferences.size > 0;
+        // Disable if we have any bulk selections OR no single selection
+        confirmBtn.disabled = !window.selectedResult || window.selectedReferences.size > 0 || window.selectedFilePaths.size > 0;
     }
 
     // Highlight selected results
@@ -403,6 +478,9 @@ function updateBulkActionUI() {
         const path = item.dataset.path;
         item.classList.toggle('selected', window.selectedFilePaths.has(path));
     });
+
+    // Update skip button state
+    skipBtn.disabled = !window.currentReference;
 }
 
 // Show notification
@@ -448,4 +526,90 @@ window.showNotification = showNotification;
 // Add function to show search is pending (called before debounce)
 function showSearchPending() {
     document.getElementById('searchInput').classList.add('searching');
+}
+
+function updateSelectionFeedback() {
+    const searchResults = document.getElementById('searchResults');
+    const refCount = window.selectedReferences.size;
+    const pathCount = window.selectedFilePaths.size;
+    
+    // Remove existing feedback
+    const existingFeedback = searchResults.querySelector('.selection-feedback');
+    if (existingFeedback) {
+        existingFeedback.remove();
+    }
+    
+    // Add feedback if in bulk mode
+    if (refCount > 0) {
+        const feedback = document.createElement('div');
+        feedback.className = 'selection-feedback';
+        
+        if (refCount >= 2) {
+            feedback.innerHTML = `
+                <div class="bulk-mode-indicator">
+                    📋 Bulk Matching Mode: ${refCount} references selected
+                    ${pathCount < refCount ? `<br>Select ${refCount - pathCount} more file path(s)` : ''}
+                    ${pathCount === refCount ? '<br>✓ Ready to confirm bulk match' : ''}
+                </div>
+            `;
+        } else {
+            feedback.innerHTML = `
+                <div class="selection-limit-warning">
+                    ⚠️ Select at least 2 references to enable bulk matching
+                </div>
+            `;
+        }
+        
+        searchResults.insertBefore(feedback, searchResults.firstChild);
+    }
+}
+
+function validateSelections() {
+    const refCount = window.selectedReferences.size;
+    const pathCount = window.selectedFilePaths.size;
+    
+    // Remove excess file path selections if references were reduced
+    if (pathCount > refCount) {
+        const pathsArray = Array.from(window.selectedFilePaths);
+        const excessPaths = pathsArray.slice(refCount);
+        excessPaths.forEach(path => window.selectedFilePaths.delete(path));
+        
+        if (excessPaths.length > 0) {
+            showNotification(`Removed ${excessPaths.length} excess file selection(s)`, 'info');
+        }
+    }
+    
+    return {
+        isValid: pathCount <= refCount,
+        canBulkMatch: refCount >= 2 && pathCount === refCount,
+        canSingleMatch: refCount === 0 && window.selectedResult
+    };
+}
+
+function syncVisualStates() {
+    // Sync reference item visual states
+    const referenceItems = document.querySelectorAll('.reference-item');
+    referenceItems.forEach(item => {
+        const refText = item.querySelector('.reference-text')?.textContent;
+        if (refText) {
+            const isSelected = window.selectedReferences.has(refText);
+            const isActive = refText === window.currentReference;
+            
+            item.classList.toggle('selected', isSelected);
+            item.classList.toggle('active', isActive);
+        }
+    });
+    
+    // Sync result item visual states
+    const resultItems = document.querySelectorAll('.result-item');
+    resultItems.forEach(item => {
+        const path = item.dataset.path;
+        if (path) {
+            const isSelected = window.selectedFilePaths.has(path);
+            const isSingleSelected = window.selectedResult && window.selectedResult.path === path;
+            
+            item.classList.toggle('selected', isSelected);
+            item.classList.toggle('single-selected', isSingleSelected && window.selectedReferences.size === 0);
+        }
+    });
 }
