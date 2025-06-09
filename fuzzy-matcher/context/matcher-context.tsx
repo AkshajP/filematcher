@@ -96,11 +96,16 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
     // Remove item but keep order numbers intact
     newSelected = state.selectedReferences.filter(item => item.item !== action.payload);
   } else {
-    // Add with next available order number
-    const maxOrder = state.selectedReferences.length > 0 
-      ? Math.max(...state.selectedReferences.map(item => item.order))
-      : 0;
-    newSelected = [...state.selectedReferences, { item: action.payload, order: maxOrder + 1 }];
+    // Find the lowest available order number (fill gaps first)
+    const usedOrders = new Set(state.selectedReferences.map(item => item.order));
+    let nextOrder = 1;
+    
+    // Find the first available order number
+    while (usedOrders.has(nextOrder)) {
+      nextOrder++;
+    }
+    
+    newSelected = [...state.selectedReferences, { item: action.payload, order: nextOrder }];
   }
   
   const selectedResult = newSelected.length > 0 ? null : state.selectedResult;
@@ -122,20 +127,41 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
   } else {
     // Only allow selection if we haven't exceeded reference count
     if (state.selectedFilePaths.length < state.selectedReferences.length) {
-      const maxOrder = state.selectedFilePaths.length > 0 
-        ? Math.max(...state.selectedFilePaths.map(item => item.order))
-        : 0;
-      newSelected = [...state.selectedFilePaths, { item: action.payload, order: maxOrder + 1 }];
+      // Find the lowest available order number (fill gaps first)
+      const usedOrders = new Set(state.selectedFilePaths.map(item => item.order));
+      let nextOrder = 1;
+      
+      // Find the first available order number
+      while (usedOrders.has(nextOrder) && nextOrder <= state.selectedReferences.length) {
+        nextOrder++;
+      }
+      
+      newSelected = [...state.selectedFilePaths, { item: action.payload, order: nextOrder }];
     } else {
       return state; // Don't allow selection
     }
-  }}
+  }
+  return {
+    ...state,
+    selectedFilePaths: newSelected,
+    selectedResult: null,
+  };
+}
 
     case 'SELECT_ALL_REFERENCES': {
-      const allSelected = state.selectedReferences.size === state.unmatchedReferences.length;
+      const allSelected = state.selectedReferences.length === state.unmatchedReferences.length;
+      let newSelected: Array<{ item: string; order: number }> = [];
+      
+      if (!allSelected) {
+        newSelected = state.unmatchedReferences.map((ref, index) => ({
+          item: ref,
+          order: index + 1
+        }));
+      }
+      
       return {
         ...state,
-        selectedReferences: allSelected ? [] : new Set(state.unmatchedReferences),
+        selectedReferences: newSelected,
         selectedFilePaths: [],
         selectedResult: null,
       };
@@ -177,32 +203,41 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
     }
 
     case 'CONFIRM_BULK_MATCH': {
-      const refsArray = Array.from(state.selectedReferences);
-      const pathsArray = Array.from(state.selectedFilePaths);
-      
-      if (refsArray.length !== pathsArray.length || refsArray.length < 2) {
-        return state;
-      }
-      
-      const newPairs: MatchedPair[] = refsArray.map((ref, index) => ({
-        reference: ref,
-        path: pathsArray[index],
-        score: 1.0,
-        timestamp: new Date().toISOString(),
-        method: 'manual-bulk' as const,
-        sessionId: state.sessionId,
-      }));
-      
-      const newUsedPaths = new Set(state.usedFilePaths);
-      pathsArray.forEach(path => newUsedPaths.add(path));
-      
-      const newUnmatched = state.unmatchedReferences.filter(ref => !refsArray.includes(ref));
-      const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
-      
-      return {
+  // Sort by order number before extracting items to ensure correct pairing
+  const refsArray = state.selectedReferences
+    .sort((a, b) => a.order - b.order)
+    .map(item => item.item);
+  const pathsArray = state.selectedFilePaths
+    .sort((a, b) => a.order - b.order)
+    .map(item => item.item);
+  
+  if (refsArray.length !== pathsArray.length || refsArray.length < 2) {
+    return state;
+  }
+  
+  const newPairs: MatchedPair[] = refsArray.map((ref, index) => ({
+    reference: ref,
+    path: pathsArray[index], // Now correctly maps by visual order
+    score: 1.0,
+    timestamp: new Date().toISOString(),
+    method: 'manual-bulk' as const,
+    sessionId: state.sessionId,
+  }));
+  
+  const newUsedPaths = new Set(state.usedFilePaths);
+  pathsArray.forEach(path => newUsedPaths.add(path));
+  
+  const newUnmatched = state.unmatchedReferences.filter(ref => !refsArray.includes(ref));
+  const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
+  
+  return {
     ...state,
-    selectedFilePaths: newSelected,
-    selectedResult: null,
+    matchedPairs: [...state.matchedPairs, ...newPairs],
+    usedFilePaths: newUsedPaths,
+    unmatchedReferences: newUnmatched,
+    selectedReferences: [],
+    selectedFilePaths: [],
+    currentReference: nextReference,
   };
 }
     
@@ -246,28 +281,28 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
     }
 
     case 'BULK_SKIP_REFERENCES': {
-      const selected = Array.from(state.selectedReferences);
-      let newUnmatched = [...state.unmatchedReferences];
-      
-      // Move selected references to end
-      selected.forEach(ref => {
-        const index = newUnmatched.indexOf(ref);
-        if (index > -1) {
-          newUnmatched.splice(index, 1);
-          newUnmatched.push(ref);
-        }
-      });
-      
-      const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
-      
-      return {
-        ...state,
-        unmatchedReferences: newUnmatched,
-        selectedReferences: [],
-        selectedFilePaths: [],
-        currentReference: nextReference,
-      };
-    }
+    const selected = state.selectedReferences.map(item => item.item);
+    const newUnmatched = [...state.unmatchedReferences];
+    
+    // Move selected references to end
+    selected.forEach(ref => {
+      const index = newUnmatched.indexOf(ref);
+      if (index > -1) {
+        newUnmatched.splice(index, 1);
+        newUnmatched.push(ref);
+      }
+    });
+    
+    const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
+    
+    return {
+      ...state,
+      unmatchedReferences: newUnmatched,
+      selectedReferences: [],
+      selectedFilePaths: [],
+      currentReference: nextReference,
+    };
+  }
 
     case 'BULK_DESELECT_ALL':
       return {

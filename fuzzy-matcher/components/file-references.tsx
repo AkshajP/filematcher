@@ -47,7 +47,7 @@ export function FileReferences({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden">
+    <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-full">
       {/* Header */}
       <div className="bg-emerald-700 text-white p-4 flex justify-between items-center">
         <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -83,7 +83,7 @@ export function FileReferences({
       )}
 
       {/* References List */}
-      <ScrollArea className="flex-1 p-3">
+      <ScrollArea className="flex-1 p-3 min-h-0">
         {references.length === 0 ? (
           <div className="text-center text-gray-500 py-8">
             🎉 All references matched!
@@ -111,7 +111,7 @@ export function FileReferences({
                   <div className="flex items-center gap-3">
                     {/* Selection Indicator */}
                     {isSelected && selectionNumber ? (
-                      <div className="bg-emerald-700 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold">
+                      <div className="bg-emerald-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold">
                         {selectionNumber}
                       </div>
                     ) : (

@@ -70,12 +70,43 @@ export function SearchResults({
   return (
     <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-full">
       {/* Current Reference Display */}
-      {currentReference && (
-        <div className="bg-green-50 border-b border-green-200 p-4">
-          <h4 className="text-sm font-semibold text-green-700 mb-2">Currently Mapping</h4>
-          <div className="text-sm text-gray-700">{currentReference}</div>
-        </div>
-      )}
+        {(currentReference || selectedReferences.length > 0) && (
+            <div className="bg-green-50 border-b border-green-200 p-4">
+                <h4 className="text-sm font-semibold text-green-700 mb-2">Currently Mapping</h4>
+                {selectedReferences.length > 0 ? (
+                (() => {
+                    // Find the next reference that needs a file path
+                    const refOrders = new Set(selectedReferences.map(r => r.order));
+                    const pathOrders = new Set(selectedFilePaths.map(p => p.order));
+                    
+                    // Find the lowest order number that has a reference but no file path
+                    let nextOrder = null;
+                    for (let i = 1; i <= selectedReferences.length; i++) {
+                    if (refOrders.has(i) && !pathOrders.has(i)) {
+                        nextOrder = i;
+                        break;
+                    }
+                    }
+                    
+                    if (nextOrder) {
+                    const nextRef = selectedReferences.find(r => r.order === nextOrder);
+                    return (
+                        <div className="flex items-center gap-2 text-sm text-gray-700">
+                        <div className="bg-emerald-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold">
+                            {nextOrder}
+                        </div>
+                        <span>{nextRef?.item}</span>
+                        </div>
+                    );
+                    } else {
+                    return <div className="text-sm text-green-600">✓ All positions mapped</div>;
+                    }
+                })()
+                ) : (
+                <div className="text-sm text-gray-700">{currentReference}</div>
+                )}
+            </div>
+            )}
 
       {/* Search Input */}
       <div className="p-4 border-b">
@@ -150,7 +181,7 @@ export function SearchResults({
                   <div className="flex items-center gap-3">
                     {/* Selection Indicator */}
                     {isSelected && selectionNumber ? (
-                      <div className="bg-emerald-700 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold">
+                      <div className="bg-emerald-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold">
                         {selectionNumber}
                       </div>
                     ) : (

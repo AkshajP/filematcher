@@ -9,10 +9,9 @@ interface MatchedPairsProps {
   matchedPairs: MatchedPair[];
   onRemoveMatch: (index: number) => void;
 }
-
 export function MatchedPairs({ matchedPairs, onRemoveMatch }: MatchedPairsProps) {
   return (
-    <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden">
+    <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-full">
       {/* Header */}
       <div className="bg-emerald-700 text-white p-4 flex justify-between items-center">
         <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -24,7 +23,7 @@ export function MatchedPairs({ matchedPairs, onRemoveMatch }: MatchedPairsProps)
       </div>
 
       {/* Matched Pairs List */}
-      <ScrollArea className="flex-1 p-3">
+      <ScrollArea className="flex-1 p-3 min-h-0">
         {matchedPairs.length === 0 ? (
           <div className="text-center text-gray-500 py-8">
             No matches confirmed yet
