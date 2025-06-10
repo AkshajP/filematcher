@@ -1,4 +1,4 @@
-// fuzzy-matcher/components/search-results.tsx - Enhanced with Multi-Select
+// fuzzy-matcher/components/search-results.tsx - Fixed Shift+Arrow Range Selection
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,6 @@ interface SearchResultsProps {
   onSkipReference: () => void;
 }
 
-
 export function SearchResults({
   searchTerm,
   onSearchTermChange,
@@ -56,6 +55,7 @@ export function SearchResults({
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
+
   // Update multi-select mode based on selections
   useEffect(() => {
     setIsMultiSelectMode(
@@ -161,21 +161,46 @@ export function SearchResults({
     }
   };
 
-  // Handle range selection
+  // Fixed range selection that properly handles ranges
   const handleRangeSelection = (startIndex: number, endIndex: number) => {
     const start = Math.min(startIndex, endIndex);
     const end = Math.max(startIndex, endIndex);
 
-    // Select all items in range that aren't already selected
+    // First, get all paths that should be selected in this range
+    const pathsInRange = new Set<string>();
     for (let i = start; i <= end; i++) {
       const match = searchResults[i];
-      if (match && !isSelected(match.path)) {
-        onToggleFilePathSelection(match.path);
+      if (match) {
+        pathsInRange.add(match.path);
       }
     }
+
+    // Find currently selected paths that are NOT in the range
+    const currentlySelected = new Set(selectedFilePaths.map(item => item.item));
+    const pathsToDeselect = new Set<string>();
+    
+    currentlySelected.forEach(path => {
+      if (!pathsInRange.has(path)) {
+        pathsToDeselect.add(path);
+      }
+    });
+
+    // Deselect paths outside the range
+    pathsToDeselect.forEach(path => {
+      if (isSelected(path)) {
+        onToggleFilePathSelection(path);
+      }
+    });
+
+    // Select all paths in the range that aren't already selected
+    pathsInRange.forEach(path => {
+      if (!isSelected(path)) {
+        onToggleFilePathSelection(path);
+      }
+    });
   };
 
-  // Handle keyboard navigation
+  // Fixed keyboard navigation with proper range selection
   const handleKeyDown = (event: KeyboardEvent) => {
     if (!containerRef.current || searchResults.length === 0) return;
 
@@ -184,21 +209,27 @@ export function SearchResults({
     switch (event.key) {
       case "ArrowDown":
         if (event.shiftKey) {
-          // Shift+Down: Extend selection downward
+          // Shift+Down: Range selection downward
           event.preventDefault();
           if (cursorIndex < searchResults.length - 1) {
-            const nextIndex = cursorIndex + 1;
-            const match = searchResults[nextIndex];
-            if (match && !isSelected(match.path)) {
-              onToggleFilePathSelection(match.path);
+            const newCursorIndex = cursorIndex + 1;
+            
+            // If no anchor set, start range selection
+            if (rangeAnchor === -1) {
+              setRangeAnchor(cursorIndex);
             }
-            setCursorIndex(nextIndex);
+            
+            // Perform range selection from anchor to new cursor position
+            handleRangeSelection(rangeAnchor, newCursorIndex);
+            setCursorIndex(newCursorIndex);
           }
         } else {
           // Down: Move cursor
           event.preventDefault();
           if (cursorIndex < searchResults.length - 1) {
             setCursorIndex(cursorIndex + 1);
+            // Reset anchor when not using shift
+            setRangeAnchor(-1);
           }
         }
         handled = true;
@@ -206,20 +237,27 @@ export function SearchResults({
 
       case "ArrowUp":
         if (event.shiftKey) {
-          // Shift+Up: Shrink selection upward (deselect current if selected)
+          // Shift+Up: Range selection upward
           event.preventDefault();
-          const match = searchResults[cursorIndex];
-          if (match && isSelected(match.path)) {
-            onToggleFilePathSelection(match.path);
-          }
           if (cursorIndex > 0) {
-            setCursorIndex(cursorIndex - 1);
+            const newCursorIndex = cursorIndex - 1;
+            
+            // If no anchor set, start range selection
+            if (rangeAnchor === -1) {
+              setRangeAnchor(cursorIndex);
+            }
+            
+            // Perform range selection from anchor to new cursor position
+            handleRangeSelection(rangeAnchor, newCursorIndex);
+            setCursorIndex(newCursorIndex);
           }
         } else {
           // Up: Move cursor
           event.preventDefault();
           if (cursorIndex > 0) {
             setCursorIndex(cursorIndex - 1);
+            // Reset anchor when not using shift
+            setRangeAnchor(-1);
           }
         }
         handled = true;
@@ -271,6 +309,7 @@ export function SearchResults({
     return () => container.removeEventListener("keydown", handleKeyDown);
   }, [
     cursorIndex,
+    rangeAnchor,
     searchResults,
     selectedFilePaths,
     selectedResult,
@@ -359,6 +398,8 @@ export function SearchResults({
           className={`${isSearching ? "animate-pulse" : ""}`}
         />
       </div>
+
+    
 
        {/* Search Results */}
       <ScrollArea className="flex-1 p-3 min-h-0">

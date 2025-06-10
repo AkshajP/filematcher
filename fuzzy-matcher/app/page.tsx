@@ -1,6 +1,6 @@
 'use client';
 
-// app/page.tsx - Main Page Component
+// app/page.tsx - Main Page Component - Fixed function reference
 
 import { Header } from '@/components/header';
 import { FileReferences } from '@/components/file-references';
@@ -19,12 +19,10 @@ export default function HomePage() {
     searchResults,
     isLoading,
     isSearching,
-    isProcessingFolder,
     stats,
     bulkValidation,
     handleResultSelect,
     exportMappings,
-    handleFolderUpload,
     loadFallbackData
   } = useMatcherLogic();
 

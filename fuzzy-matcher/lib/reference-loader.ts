@@ -271,9 +271,9 @@ export function downloadReferenceTemplate(): void {
   const csvRows = [
     'Doc Description,Date,References',
     'Project Requirements Document,2024-01-15,REQ-001',
-    'Technical Specification,2024-01-16,TECH-002',
-    'User Manual Draft,2024-01-17,DOC-003',
-    'API Documentation,2024-01-18,API-004',
+    'Technical Specification,,TECH-002',
+    'User Manual Draft,2024-01-17,',
+    'API Documentation,,',
     'Test Plan Document,2024-01-19,TEST-005'
   ];
   

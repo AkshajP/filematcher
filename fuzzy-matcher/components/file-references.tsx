@@ -1,4 +1,4 @@
-// fuzzy-matcher/components/file-references.tsx - Complete Multi-Select Implementation
+// fuzzy-matcher/components/file-references.tsx - Fixed Shift+Arrow Range Selection
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,7 @@ export function FileReferences({
   const [isMultiSelectMode, setIsMultiSelectMode] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
+
   // Update multi-select mode based on selections
   useEffect(() => {
     setIsMultiSelectMode(selectedCount > 0);
@@ -56,12 +57,13 @@ export function FileReferences({
   // Initialize cursor to current reference
   useEffect(() => {
     if (currentReference && !isMultiSelectMode) {
-      const index = references.indexOf(currentReference);
+      const index = references.findIndex(ref => ref.description === currentReference.description);
       if (index !== -1) {
         setCursorIndex(index);
       }
     }
   }, [currentReference, references, isMultiSelectMode]);
+
   const scrollToItem = useCallback((index: number) => {
     const itemElement = itemRefs.current[index];
     if (itemElement) {
@@ -84,22 +86,22 @@ export function FileReferences({
     }
   }, [cursorIndex, scrollToItem, references.length]);
 
-
   const getSelectionNumber = (reference: FileReference): number | null => {
-  const found = selectedReferences.find((item) => item.item.description === reference.description);
-  return found ? found.order : null;
-};
+    const found = selectedReferences.find((item) => item.item.description === reference.description);
+    return found ? found.order : null;
+  };
 
-const isGeneratedReference = (reference: FileReference): boolean => {
-  return reference.isGenerated || false;
-};
+  const isGeneratedReference = (reference: FileReference): boolean => {
+    return reference.isGenerated || false;
+  };
 
-const isSelected = (reference: FileReference): boolean => {
-  return selectedReferences.some((item) => item.item.description === reference.description);
-};
+  const isSelected = (reference: FileReference): boolean => {
+    return selectedReferences.some((item) => item.item.description === reference.description);
+  };
+
   // Handle mouse clicks
   const handleReferenceClick = (
-    reference: string,
+    reference: FileReference,
     index: number,
     event: React.MouseEvent
   ) => {
@@ -121,10 +123,8 @@ const isSelected = (reference: FileReference): boolean => {
     } else {
       // Regular click: Single selection (exit multi-select mode)
       if (isMultiSelectMode) {
-        // Clear multi-selections first
-        selectedReferences.forEach(() => {
-          // This is a bit hacky but we need to clear all selections
-        });
+        // Clear multi-selections first by deselecting all
+        onBulkDeselect();
       }
       onSelectReference(reference);
       setCursorIndex(index);
@@ -132,21 +132,48 @@ const isSelected = (reference: FileReference): boolean => {
     }
   };
 
-  // Handle range selection
+  // Fixed range selection that properly handles ranges
   const handleRangeSelection = (startIndex: number, endIndex: number) => {
     const start = Math.min(startIndex, endIndex);
     const end = Math.max(startIndex, endIndex);
 
-    // Select all items in range that aren't already selected
+    // First, get all references that should be selected in this range
+    const referencesInRange = new Set<string>();
     for (let i = start; i <= end; i++) {
       const ref = references[i];
-      if (!isSelected(ref)) {
-        onToggleSelection(ref);
+      if (ref) {
+        referencesInRange.add(ref.description);
       }
     }
+
+    // Find currently selected references that are NOT in the range
+    const currentlySelected = new Set(selectedReferences.map(item => item.item.description));
+    const referencesToDeselect = new Set<string>();
+    
+    currentlySelected.forEach(description => {
+      if (!referencesInRange.has(description)) {
+        referencesToDeselect.add(description);
+      }
+    });
+
+    // Deselect references outside the range
+    referencesToDeselect.forEach(description => {
+      const ref = references.find(r => r.description === description);
+      if (ref && isSelected(ref)) {
+        onToggleSelection(ref);
+      }
+    });
+
+    // Select all references in the range that aren't already selected
+    referencesInRange.forEach(description => {
+      const ref = references.find(r => r.description === description);
+      if (ref && !isSelected(ref)) {
+        onToggleSelection(ref);
+      }
+    });
   };
 
-  // Handle keyboard navigation
+  // Fixed keyboard navigation with proper range selection
   const handleKeyDown = (event: KeyboardEvent) => {
     if (!containerRef.current || references.length === 0) return;
 
@@ -155,21 +182,27 @@ const isSelected = (reference: FileReference): boolean => {
     switch (event.key) {
       case "ArrowDown":
         if (event.shiftKey) {
-          // Shift+Down: Extend selection downward
+          // Shift+Down: Range selection downward
           event.preventDefault();
           if (cursorIndex < references.length - 1) {
-            const nextIndex = cursorIndex + 1;
-            const ref = references[nextIndex];
-            if (!isSelected(ref)) {
-              onToggleSelection(ref);
+            const newCursorIndex = cursorIndex + 1;
+            
+            // If no anchor set, start range selection
+            if (rangeAnchor === -1) {
+              setRangeAnchor(cursorIndex);
             }
-            setCursorIndex(nextIndex);
+            
+            // Perform range selection from anchor to new cursor position
+            handleRangeSelection(rangeAnchor, newCursorIndex);
+            setCursorIndex(newCursorIndex);
           }
         } else {
           // Down: Move cursor
           event.preventDefault();
           if (cursorIndex < references.length - 1) {
             setCursorIndex(cursorIndex + 1);
+            // Reset anchor when not using shift
+            setRangeAnchor(-1);
           }
         }
         handled = true;
@@ -177,20 +210,27 @@ const isSelected = (reference: FileReference): boolean => {
 
       case "ArrowUp":
         if (event.shiftKey) {
-          // Shift+Up: Shrink selection upward (deselect current if selected)
+          // Shift+Up: Range selection upward
           event.preventDefault();
-          const ref = references[cursorIndex];
-          if (isSelected(ref)) {
-            onToggleSelection(ref);
-          }
           if (cursorIndex > 0) {
-            setCursorIndex(cursorIndex - 1);
+            const newCursorIndex = cursorIndex - 1;
+            
+            // If no anchor set, start range selection
+            if (rangeAnchor === -1) {
+              setRangeAnchor(cursorIndex);
+            }
+            
+            // Perform range selection from anchor to new cursor position
+            handleRangeSelection(rangeAnchor, newCursorIndex);
+            setCursorIndex(newCursorIndex);
           }
         } else {
           // Up: Move cursor
           event.preventDefault();
           if (cursorIndex > 0) {
             setCursorIndex(cursorIndex - 1);
+            // Reset anchor when not using shift
+            setRangeAnchor(-1);
           }
         }
         handled = true;
@@ -200,8 +240,10 @@ const isSelected = (reference: FileReference): boolean => {
         // Space: Toggle selection at cursor
         event.preventDefault();
         const ref = references[cursorIndex];
-        onToggleSelection(ref);
-        setRangeAnchor(cursorIndex);
+        if (ref) {
+          onToggleSelection(ref);
+          setRangeAnchor(cursorIndex);
+        }
         handled = true;
         break;
 
@@ -230,7 +272,9 @@ const isSelected = (reference: FileReference): boolean => {
         if (!isMultiSelectMode) {
           event.preventDefault();
           const ref = references[cursorIndex];
-          onSelectReference(ref);
+          if (ref) {
+            onSelectReference(ref);
+          }
           handled = true;
         }
         break;
@@ -248,7 +292,7 @@ const isSelected = (reference: FileReference): boolean => {
 
     container.addEventListener("keydown", handleKeyDown);
     return () => container.removeEventListener("keydown", handleKeyDown);
-  }, [cursorIndex, references, selectedReferences, isMultiSelectMode]);
+  }, [cursorIndex, rangeAnchor, references, selectedReferences, isMultiSelectMode]);
 
   // Reset states when selections are cleared externally
   useEffect(() => {
@@ -266,7 +310,7 @@ const isSelected = (reference: FileReference): boolean => {
       {/* Header */}
       <div className="bg-emerald-700 text-white p-4 flex justify-between items-center">
         <h2 className="text-lg font-semibold flex items-center gap-2">
-          📋 File References
+          📋 Client Index References
           {isMultiSelectMode && (
             <Badge
               variant="secondary"
@@ -295,7 +339,7 @@ const isSelected = (reference: FileReference): boolean => {
             <kbd>Space</kbd> toggle
           </span>
           <span>
-            <kbd>Shift+↑↓</kbd> extend
+            <kbd>Shift+↑↓</kbd> range select
           </span>
           <span>
             <kbd>Ctrl+Click</kbd> multi
@@ -350,117 +394,116 @@ const isSelected = (reference: FileReference): boolean => {
       {/* References List */}
       <ScrollArea className="flex-1 p-3 min-h-0">
         {references.map((reference, index) => {
-  const isItemSelected = isSelected(reference);
-  const isActive = reference.description === currentReference?.description && !isMultiSelectMode;
-  const isCursor = index === cursorIndex;
-  const isGenerated = isGeneratedReference(reference);
-  const selectionNumber = getSelectionNumber(reference);
+          const isItemSelected = isSelected(reference);
+          const isActive = reference.description === currentReference?.description && !isMultiSelectMode;
+          const isCursor = index === cursorIndex;
+          const isGenerated = isGeneratedReference(reference);
+          const selectionNumber = getSelectionNumber(reference);
 
-  return (
-    <div
-      key={`${reference.description}-${index}`}
-      ref={(el) => {
-        itemRefs.current[index] = el;
-      }}
-      className={`
-        bg-gray-50 border rounded-md p-3 cursor-pointer transition-all relative
-        hover:bg-gray-100 hover:border-emerald-300
-        ${isItemSelected ? "bg-emerald-50 border-emerald-300 border-2" : ""}
-        ${isActive ? "bg-green-50 border-green-300 border-2" : ""}
-        ${isCursor ? "ring-2 ring-blue-400 ring-offset-1" : ""}
-        ${isItemSelected && isActive ? "bg-gradient-to-r from-emerald-50 to-green-50" : ""}
-      `}
-      onClick={(e) => handleReferenceClick(reference, index, e)}
-      onMouseDown={(e) => {
-        if (e.shiftKey) {
-          e.preventDefault();
-        }
-      }}
-    >
-      {/* Cursor indicator */}
-      {isCursor && (
-        <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 rounded-l-md"></div>
-      )}
-
-      <div className="flex items-start gap-3">
-        {/* Selection Indicator */}
-        {isItemSelected && selectionNumber ? (
-          <div className="bg-emerald-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1">
-            {selectionNumber}
-          </div>
-        ) : (
-          <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0 mt-1">
-            <Checkbox
-              checked={isItemSelected}
-              onCheckedChange={() => {
-                onToggleSelection(reference);
-                setRangeAnchor(index);
+          return (
+            <div
+              key={`${reference.description}-${index}`}
+              ref={(el) => {
+                itemRefs.current[index] = el;
               }}
-            />
-          </div>
-        )}
+              className={`
+                bg-gray-50 border rounded-md p-3 cursor-pointer transition-all relative
+                hover:bg-gray-100 hover:border-emerald-300
+                ${isItemSelected ? "bg-emerald-50 border-emerald-300 border-2" : ""}
+                ${isActive ? "bg-green-50 border-green-300 border-2" : ""}
+                ${isCursor ? "ring-2 ring-blue-400 ring-offset-1" : ""}
+                ${isItemSelected && isActive ? "bg-gradient-to-r from-emerald-50 to-green-50" : ""}
+              `}
+              onClick={(e) => handleReferenceClick(reference, index, e)}
+              onMouseDown={(e) => {
+                if (e.shiftKey) {
+                  e.preventDefault();
+                }
+              }}
+            >
+              {/* Cursor indicator */}
+              {isCursor && (
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 rounded-l-md"></div>
+              )}
 
-        {/* Reference Content */}
-        <div className="flex items-start justify-between flex-1 min-w-0 gap-3">
-          {/* Description */}
-          <div className="text-sm text-gray-700 leading-relaxed select-none flex-1">
-            {reference.description}
-          </div>
+              <div className="flex items-start gap-3">
+                {/* Selection Indicator */}
+                {isItemSelected && selectionNumber ? (
+                  <div className="bg-emerald-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1">
+                    {selectionNumber}
+                  </div>
+                ) : (
+                  <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0 mt-1">
+                    <Checkbox
+                      checked={isItemSelected}
+                      onCheckedChange={() => {
+                        onToggleSelection(reference);
+                        setRangeAnchor(index);
+                      }}
+                    />
+                  </div>
+                )}
 
-          
-          {/* Badges Container */}
-          <div className="flex flex-col items-end gap-1 flex-shrink-0">
-              {/* Date Badge */}
-              {reference.date && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge
-                      variant="outline"
-                      className="text-xs border-blue-300 text-blue-700 bg-blue-50 cursor-pointer hover:bg-blue-100 transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigator.clipboard.writeText(reference.date);
-                      }}
-                    >
-                      {reference.date}
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Date - click to copy</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            
-            {/* Reference Badge */}
-            {reference.reference && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge
-                      variant="outline"
-                      className="text-xs border-purple-300 text-purple-700 bg-purple-50 cursor-pointer hover:bg-purple-100 transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigator.clipboard.writeText(reference.reference);
-                      }}
-                    >
-                      {reference.reference}
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Reference - click to copy</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-})}
+                {/* Reference Content */}
+                <div className="flex items-start justify-between flex-1 min-w-0 gap-3">
+                  {/* Description */}
+                  <div className="text-sm text-gray-700 leading-relaxed select-none flex-1">
+                    {reference.description}
+                  </div>
+
+                  {/* Badges Container */}
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                      {/* Date Badge */}
+                      {reference.date && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              variant="outline"
+                              className="text-xs border-blue-300 text-blue-700 bg-blue-50 cursor-pointer hover:bg-blue-100 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(reference.date || '');
+                              }}
+                            >
+                              {reference.date}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Date - click to copy</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                    
+                    {/* Reference Badge */}
+                    {reference.reference && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              variant="outline"
+                              className="text-xs border-purple-300 text-purple-700 bg-purple-50 cursor-pointer hover:bg-purple-100 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(reference.reference || '');
+                              }}
+                            >
+                              {reference.reference}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Reference - click to copy</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </ScrollArea>
     </div>
   );

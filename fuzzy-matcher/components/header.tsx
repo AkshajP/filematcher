@@ -76,13 +76,13 @@ export function Header({
         
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleReferenceImport}>
-            Import References
+            Upload Index
           </Button>
           <Button variant="outline" size="sm" onClick={handleDownloadTemplate}>
-            Download Template
+            Download Index Template
           </Button>
           <Button variant="outline" size="sm" onClick={handleFolderImport}>
-            Import Folder
+            Upload File Paths
           </Button>
           <Button variant="outline" size="sm" onClick={onExport}>
             Export Mappings
