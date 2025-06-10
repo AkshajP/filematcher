@@ -30,7 +30,7 @@ export interface ImportOptions {
   importExactMatches: boolean;
   importMissingAsSkipped: boolean;
   importPotentialMatches: boolean;
-  createReferencesForNewFiles: boolean;
+  restoreMissingReferences: boolean;
 }
 
 /**
@@ -203,6 +203,97 @@ export function validateImportedMappings(
   };
 }
 
+export function validateImportedMappingsAgainstCurrentState(
+  importedMappings: MatchedPair[],
+  currentReferences: FileReference[],
+  currentFilePaths: string[],
+  importedMetadata?: ExportMetadata
+): ImportValidationResult {
+  const exactMatches: string[] = [];
+  const missingFiles: Array<{ reference: string; originalPath: string }> = [];
+  const missingReferences: Array<{ reference: string; path: string }> = [];
+  const potentialMatches: Array<{ 
+    reference: string; 
+    originalPath: string; 
+    suggestedPath: string; 
+    similarity: number; 
+  }> = [];
+  const errors: string[] = [];
+
+  const currentPathsSet = new Set(currentFilePaths);
+  const currentReferencesSet = new Set(currentReferences.map(ref => ref.description));
+
+  // Check each imported mapping
+  importedMappings.forEach(mapping => {
+    const hasReference = currentReferencesSet.has(mapping.reference);
+    const hasFile = currentPathsSet.has(mapping.path);
+
+    if (hasReference && hasFile) {
+      // Perfect match
+      exactMatches.push(mapping.path);
+    } else if (!hasReference) {
+      // Reference doesn't exist in current index
+      missingReferences.push({
+        reference: mapping.reference,
+        path: mapping.path
+      });
+    } else if (!hasFile) {
+      // File doesn't exist, but reference does
+      missingFiles.push({
+        reference: mapping.reference,
+        originalPath: mapping.path
+      });
+
+      // Look for potential matches (same filename, different path)
+      const originalFileName = mapping.path.split('/').pop() || '';
+      const potentialPath = currentFilePaths.find(path => 
+        path.split('/').pop() === originalFileName
+      );
+
+      if (potentialPath) {
+        potentialMatches.push({
+          reference: mapping.reference,
+          originalPath: mapping.path,
+          suggestedPath: potentialPath,
+          similarity: calculatePathSimilarity(mapping.path, potentialPath)
+        });
+      }
+    }
+  });
+
+  // Find references that have no mappings (new in current index)
+  const mappedReferences = new Set(importedMappings.map(m => m.reference));
+  const unmappedReferences = currentReferences.filter(ref => !mappedReferences.has(ref.description));
+
+  // Find files that have no mappings (new files)
+  const mappedPaths = new Set(importedMappings.map(m => m.path));
+  const unmappedFiles = currentFilePaths.filter(path => !mappedPaths.has(path));
+
+  const validationSummary = {
+    totalMappings: importedMappings.length,
+    exactMatches: exactMatches.length,
+    missingFiles: missingFiles.length,
+    newFiles: unmappedFiles.length,
+    pathChanges: potentialMatches.length,
+    missingReferences: missingReferences.length,
+    newReferences: unmappedReferences.length
+  };
+
+  return {
+    isValid: exactMatches.length > 0,
+    metadata: importedMetadata,
+    mappings: importedMappings,
+    validationSummary,
+    exactMatches,
+    missingFiles,
+    newFiles: unmappedFiles,
+    potentialMatches,
+    missingReferences,
+    unmappedReferences,
+    errors
+  };
+}
+
 /**
  * Applies imported mappings with specified options
  */
@@ -213,11 +304,11 @@ export function applyImportedMappings(
   validationResult: ImportValidationResult
 ): {
   mappingsToImport: MatchedPair[];
-  referencesToCreate: FileReference[];
+  referencesToRestore: FileReference[];
   usedFilePaths: Set<string>;
 } {
   const mappingsToImport: MatchedPair[] = [];
-  const referencesToCreate: FileReference[] = [];
+  const referencesToRestore: FileReference[] = [];
   const usedFilePaths = new Set<string>();
 
   // Import exact matches
@@ -226,7 +317,7 @@ export function applyImportedMappings(
       if (validationResult.exactMatches.includes(mapping.path)) {
         mappingsToImport.push({
           ...mapping,
-          timestamp: new Date().toISOString(), // Update timestamp for import
+          timestamp: new Date().toISOString(),
         });
         usedFilePaths.add(mapping.path);
       }
@@ -243,33 +334,28 @@ export function applyImportedMappings(
       if (originalMapping) {
         mappingsToImport.push({
           ...originalMapping,
-          path: match.suggestedPath, // Use the suggested new path
+          path: match.suggestedPath,
           timestamp: new Date().toISOString(),
-          method: 'auto' as const // Mark as auto-corrected
+          method: 'auto' as const
         });
         usedFilePaths.add(match.suggestedPath);
       }
     });
   }
 
-  // Create references for new files
-  if (options.createReferencesForNewFiles) {
-    validationResult.newFiles.forEach(filePath => {
-      if (!usedFilePaths.has(filePath)) {
-        const fileName = filePath.split('/').pop() || '';
-        const description = fileName.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ').trim();
-        
-        referencesToCreate.push({
-          description: description || fileName,
-          isGenerated: true
-        });
-      }
+  // Restore missing references if selected
+  if (options.restoreMissingReferences && validationResult.missingReferences) {
+    validationResult.missingReferences.forEach(missingRef => {
+      referencesToRestore.push({
+        description: missingRef.reference,
+        isGenerated: false // These came from original client index
+      });
     });
   }
 
   return {
     mappingsToImport,
-    referencesToCreate,
+    referencesToRestore,
     usedFilePaths
   };
 }
@@ -300,6 +386,33 @@ function parseMetadataFromComments(commentLines: string[]): ExportMetadata {
   }
 
   return metadata as ExportMetadata;
+}
+
+export interface ImportValidationResult {
+  isValid: boolean;
+  metadata?: ExportMetadata;
+  mappings: MatchedPair[];
+  validationSummary: {
+    totalMappings: number;
+    exactMatches: number;
+    missingFiles: number;
+    newFiles: number;
+    pathChanges: number;
+    missingReferences: number;
+    newReferences: number;
+  };
+  exactMatches: string[];
+  missingFiles: Array<{ reference: string; originalPath: string }>;
+  missingReferences: Array<{ reference: string; path: string }>;
+  newFiles: string[];
+  unmappedReferences: FileReference[];
+  potentialMatches: Array<{ 
+    reference: string; 
+    originalPath: string; 
+    suggestedPath: string; 
+    similarity: number; 
+  }>;
+  errors: string[];
 }
 
 function extractValue(commentLine: string): string {

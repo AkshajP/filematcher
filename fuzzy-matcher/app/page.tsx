@@ -11,7 +11,7 @@ import { ImportValidationDialog } from '@/components/import-validation-dialog';
 import { useMatcherLogic } from '@/hooks/use-matcher';
 import { loadFromFolder, loadFromFiles } from '@/lib/data-loader';
 import { importReferencesFromFile, downloadReferenceTemplate } from '@/lib/reference-loader';
-import { parseExportedCSV, validateImportedMappings, applyImportedMappings, ImportValidationResult, ImportOptions } from '@/lib/import-manager';
+import { parseExportedCSV, validateImportedMappings, applyImportedMappings, ImportValidationResult, ImportOptions, validateImportedMappingsAgainstCurrentState } from '@/lib/import-manager';
 import { useState } from 'react';
 
 export default function HomePage() {
@@ -125,92 +125,83 @@ export default function HomePage() {
 };
 
   const handleImportMappings = async (files: FileList) => {
-    try {
-      const file = files[0];
-      const { metadata, mappings, errors } = await parseExportedCSV(file);
-      
-      if (errors.length > 0) {
-        console.warn('CSV parsing errors:', errors);
-        // Show errors but continue if we have some valid data
-        if (mappings.length === 0) {
-          alert(`Failed to parse mappings file:\n${errors.join('\n')}`);
-          return;
-        }
-      }
-
+  try {
+    const file = files[0];
+    const { metadata, mappings, errors } = await parseExportedCSV(file);
+    
+    if (errors.length > 0) {
+      console.warn('CSV parsing errors:', errors);
       if (mappings.length === 0) {
-        alert('No valid mappings found in the file.');
+        alert(`Failed to parse mappings file:\n${errors.join('\n')}`);
         return;
       }
-
-      // If we have file paths already, validate immediately
-      if (matcher.filePaths.length > 0) {
-        const validationResult = validateImportedMappings(mappings, matcher.filePaths, metadata);
-        setImportDialog({
-          isOpen: true,
-          validationResult
-        });
-      } else {
-        // Need to prompt for folder selection first
-        const folderName = metadata?.folderName || 'unknown folder';
-        alert(`To import mappings from "${folderName}", please first upload the corresponding folder structure using "Import Folder".`);
-        setImportDialog({
-          isOpen: false,
-          awaitingFolder: true,
-          pendingImportData: { metadata, mappings }
-        });
-      }
-    } catch (error) {
-      console.error('Failed to import mappings:', error);
-      alert(`Failed to import mappings: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  };
 
-  const handleImportConfirm = async (options: ImportOptions) => {
-    if (!importDialog.validationResult) return;
-
-    try {
-      setImportDialog(prev => ({ ...prev, isProcessing: true }));
-
-      const { mappingsToImport, referencesToCreate, usedFilePaths } = applyImportedMappings(
-        importDialog.validationResult.mappings,
-        matcher.filePaths,
-        options,
-        importDialog.validationResult
-      );
-
-      // Debug logging
-      console.log('Mappings to import:', mappingsToImport);
-      console.log('Current matched pairs before import:', matcher.matchedPairs);
-
-      // Apply the import
-      matcher.importMappings(
-        mappingsToImport,
-        referencesToCreate,
-        usedFilePaths,
-        importDialog.validationResult.metadata?.folderName
-      );
-
-      // Debug logging after import
-      setTimeout(() => {
-        console.log('Current matched pairs after import:', matcher.matchedPairs);
-      }, 100);
-
-      console.log(`Imported ${mappingsToImport.length} mappings and created ${referencesToCreate.length} new references`);
-      
-      setImportDialog({ isOpen: false });
-      
-      // Show success message
-      const totalImported = mappingsToImport.length + referencesToCreate.length;
-      if (totalImported > 0) {
-        alert(`Successfully imported ${mappingsToImport.length} mappings and created ${referencesToCreate.length} new references.`);
-      }
-    } catch (error) {
-      console.error('Failed to apply import:', error);
-      alert(`Failed to apply import: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setImportDialog(prev => ({ ...prev, isProcessing: false }));
+    if (mappings.length === 0) {
+      alert('No valid mappings found in the file.');
+      return;
     }
-  };
+
+    // Check if we have BOTH references and file paths loaded
+    if (matcher.filePaths.length === 0 || matcher.fileReferences.length === 0) {
+      alert('Please first upload both:\n1. Your new client index (Import References)\n2. Your new folder structure (Import Folder)\n\nThen try importing mappings again.');
+      return;
+    }
+
+    // Validate against current state (not generate new references)
+    const validationResult = validateImportedMappingsAgainstCurrentState(
+      mappings, 
+      matcher.fileReferences, 
+      matcher.filePaths, 
+      metadata
+    );
+    
+    setImportDialog({
+      isOpen: true,
+      validationResult
+    });
+  } catch (error) {
+    console.error('Failed to import mappings:', error);
+    alert(`Failed to import mappings: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+};
+
+const handleImportConfirm = async (options: ImportOptions) => {
+  if (!importDialog.validationResult) return;
+
+  try {
+    setImportDialog(prev => ({ ...prev, isProcessing: true }));
+
+    const { mappingsToImport, referencesToRestore, usedFilePaths } = applyImportedMappings(
+      importDialog.validationResult.mappings,
+      matcher.filePaths,
+      options,
+      importDialog.validationResult
+    );
+
+    // Apply the import
+    matcher.importMappings(
+      mappingsToImport,
+      referencesToRestore, // These are the restored missing references
+      usedFilePaths,
+      importDialog.validationResult.metadata?.folderName
+    );
+
+    console.log(`Imported ${mappingsToImport.length} mappings and restored ${referencesToRestore.length} missing references`);
+    
+    setImportDialog({ isOpen: false });
+    
+    let message = `Successfully imported ${mappingsToImport.length} mappings`;
+    if (referencesToRestore.length > 0) {
+      message += ` and restored ${referencesToRestore.length} missing references`;
+    }
+    alert(message + '.');
+  } catch (error) {
+    console.error('Failed to apply import:', error);
+    alert(`Failed to apply import: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    setImportDialog(prev => ({ ...prev, isProcessing: false }));
+  }
+};
 
   const handleImportCancel = () => {
     setImportDialog({ isOpen: false });

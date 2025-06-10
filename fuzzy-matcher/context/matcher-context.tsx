@@ -356,41 +356,32 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
       };
 
       case 'IMPORT_MAPPINGS': {
-        const { mappings, newReferences, usedPaths, folderName } = action.payload;
-        
-        console.log('IMPORT_MAPPINGS reducer called with:', { 
-          mappings: mappings.length, 
-          newReferences: newReferences.length,
-          currentMatchedPairs: state.matchedPairs.length 
-        });
-        
-        // Add new references to existing ones
-        const allReferences = [...state.fileReferences, ...newReferences];
-        
-        // Find which references are not yet matched
-        const mappedReferences = new Set(mappings.map(m => m.reference));
-        const newUnmatched = allReferences.filter(ref => !mappedReferences.has(ref.description));
-        
-        // Set next reference if none currently selected
-        const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
-        
-        const newState = {
-          ...state,
-          fileReferences: allReferences,
-          unmatchedReferences: newUnmatched,
-          matchedPairs: [...state.matchedPairs, ...mappings], // This should add the imported pairs
-          usedFilePaths: new Set([...state.usedFilePaths, ...usedPaths]),
-          currentReference: state.currentReference || nextReference,
-          originalReferencesCount: allReferences.length,
-          folderName: folderName || state.folderName,
-          selectedReferences: [],
-          selectedFilePaths: [],
-          selectedResult: null,
-        };
-  
-  console.log('New matched pairs count:', newState.matchedPairs.length);
-  return newState;
-}
+          const { mappings, newReferences, usedPaths, folderName } = action.payload;
+          
+          // Add new references to existing ones (these could be restored missing refs)
+          const allReferences = [...state.fileReferences, ...newReferences];
+          
+          // Find which references are not yet matched
+          const mappedReferences = new Set(mappings.map(m => m.reference));
+          const newUnmatched = allReferences.filter(ref => !mappedReferences.has(ref.description));
+          
+          // Set next reference if none currently selected
+          const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
+          
+          return {
+            ...state,
+            fileReferences: allReferences,
+            unmatchedReferences: newUnmatched,
+            matchedPairs: [...state.matchedPairs, ...mappings],
+            usedFilePaths: new Set([...state.usedFilePaths, ...usedPaths]),
+            currentReference: state.currentReference || nextReference,
+            originalReferencesCount: allReferences.length,
+            folderName: folderName || state.folderName,
+            selectedReferences: [],
+            selectedFilePaths: [],
+            selectedResult: null,
+          };
+        }
 
     default:
       return state;
