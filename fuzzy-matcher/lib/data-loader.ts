@@ -74,20 +74,34 @@ export async function loadFromFiles(files: FileList): Promise<DataSources> {
   return {source: 'folder-upload', fileReferences, filePaths };
 }
 
-export async function loadFromFolder(files: FileList): Promise<string[]> {
+export async function loadFromFolder(files: FileList): Promise<{ filePaths: string[]; folderName: string }> {
   const filePaths: string[] = [];
+  let folderName = 'Unknown';
 
   for (const file of Array.from(files)) {
     if (file.webkitRelativePath) {
       // This is from a folder upload - collect all file paths
       filePaths.push(file.webkitRelativePath);
+      
+      // Extract folder name from the first file
+      if (folderName === 'Unknown') {
+        folderName = extractFolderNameFromPaths([file.webkitRelativePath]);
+      }
     }
   }
 
-  console.log(`Loaded ${filePaths.length} file paths from folder structure`);
-  return filePaths;
+  console.log(`Loaded ${filePaths.length} file paths from folder structure: ${folderName}`);
+  return { filePaths, folderName };
 }
 
+function extractFolderNameFromPaths(filePaths: string[]): string {
+  if (filePaths.length === 0) return 'Unknown';
+  
+  // Get the root folder name from the first path
+  const firstPath = filePaths[0];
+  const parts = firstPath.split('/');
+  return parts[0] || 'Unknown';
+}
 
 // Helper function to generate references from file paths
 function generateReferencesFromPaths(filePaths: string[]): FileReference[] {

@@ -5,6 +5,7 @@ import { searchMatches } from "@/lib/fuzzy-matcher";
 import { loadDataSources, createDataFromFolder } from "@/lib/data-loader";
 import { SearchResult } from "@/lib/types";
 import { useMatcher } from "@/context/matcher-context";
+import { exportMappingsWithMetadata, extractFolderName } from "@/lib/export-manager";
 
 export function useMatcherLogic() {
   const matcher = useMatcher();
@@ -34,45 +35,50 @@ export function useMatcherLogic() {
   }, [matcher]);
 
   // Perform search when search term, current reference, or file paths change
-useEffect(() => {
-  // If no file paths are loaded, show empty results
-  if (matcher.filePaths.length === 0) {
-    setSearchResults([]);
-    return;
-  }
 
-  // If no current reference and no search term, show all available files
-  if (!matcher.currentReference && !searchTerm.trim()) {
-    const allFiles = matcher.filePaths
-      .filter(path => !matcher.usedFilePaths.has(path))
-      .map(path => ({ path, score: 0 }));
-    setSearchResults(allFiles);
-    return;
-  }
+    useEffect(() => {
+      // Safe guard against undefined
+      const filePaths = matcher.filePaths || [];
+      const usedFilePaths = matcher.usedFilePaths || new Set();
+      
+      // If no file paths are loaded, show empty results
+      if (filePaths.length === 0) {
+        setSearchResults([]);
+        return;
+      }
 
-  setIsSearching(true);
+      // If no current reference and no search term, show all available files
+      if (!matcher.currentReference && !searchTerm.trim()) {
+        const allFiles = filePaths
+          .filter(path => !usedFilePaths.has(path))
+          .map(path => ({ path, score: 0 }));
+        setSearchResults(allFiles);
+        return;
+      }
 
-  // Use debouncing for better performance
-  const timeoutId = setTimeout(() => {
-    const term = searchTerm || matcher.currentReference?.description || "";
-    const results = searchMatches(
-      term,
+      setIsSearching(true);
+
+      // Use debouncing for better performance
+      const timeoutId = setTimeout(() => {
+        const term = searchTerm || matcher.currentReference?.description || "";
+        const results = searchMatches(
+          term,
+          filePaths,
+          usedFilePaths
+        );
+        setSearchResults(results);
+        setIsSearching(false);
+      }, 300);
+
+      return () => {
+        clearTimeout(timeoutId);
+      };
+    }, [
+      searchTerm,
+      matcher.currentReference?.description,
       matcher.filePaths,
-      matcher.usedFilePaths
-    );
-    setSearchResults(results);
-    setIsSearching(false);
-  }, 300);
-
-  return () => {
-    clearTimeout(timeoutId);
-  };
-}, [
-  searchTerm,
-  matcher.currentReference?.description, // Use description instead of the whole object
-  matcher.filePaths,
-  matcher.usedFilePaths,
-]);
+      matcher.usedFilePaths,
+    ]);
 
   // Auto-select first reference when available (only if we have references)
   useEffect(() => {
@@ -90,16 +96,20 @@ useEffect(() => {
 
   // Calculate statistics
   const stats = useMemo(() => {
-    const total = matcher.fileReferences.length;
-    const matched = matcher.matchedPairs.length;
-    const unmatched = matcher.unmatchedReferences.length;
+    const fileReferences = matcher.fileReferences || [];
+    const matchedPairs = matcher.matchedPairs || [];
+    const unmatchedReferences = matcher.unmatchedReferences || [];
+    
+    const total = fileReferences.length;
+    const matched = matchedPairs.length;
+    const unmatched = unmatchedReferences.length;
     const progress = total > 0 ? Math.round((matched / total) * 100) : 0;
 
     return { total, matched, unmatched, progress };
   }, [
-    matcher.fileReferences.length,
-    matcher.matchedPairs.length,
-    matcher.unmatchedReferences.length,
+    matcher.fileReferences,
+    matcher.matchedPairs,
+    matcher.unmatchedReferences,
   ]);
 
   // Validation for bulk operations

@@ -47,6 +47,7 @@ export interface MatcherState {
   selectedResult: FileMatch | null;
   sessionId: string;
   originalReferencesCount: number;
+  folderName: string;
 }
 
 export interface MatcherActions {

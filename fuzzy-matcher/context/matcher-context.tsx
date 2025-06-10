@@ -26,6 +26,7 @@ type MatcherAction =
   | { type: 'BULK_DESELECT_ALL' }
   | { type: 'DETECT_REMAINING_FILES' }
   | { type: 'CLEAR_SELECTIONS' }
+  | { type: 'IMPORT_MAPPINGS' }
   | { type: 'UPDATE_FILE_PATHS_ONLY'; payload: string[] };
 
 function generateSessionId(): string {
@@ -72,6 +73,7 @@ const initialState: MatcherState = {
   selectedResult: null,
   sessionId: generateSessionId(),
   originalReferencesCount: 0,
+  folderName: '',
 };
 
 function matcherReducer(state: MatcherState, action: MatcherAction): MatcherState {
@@ -353,6 +355,43 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
         selectedResult: null,
       };
 
+      case 'IMPORT_MAPPINGS': {
+        const { mappings, newReferences, usedPaths, folderName } = action.payload;
+        
+        console.log('IMPORT_MAPPINGS reducer called with:', { 
+          mappings: mappings.length, 
+          newReferences: newReferences.length,
+          currentMatchedPairs: state.matchedPairs.length 
+        });
+        
+        // Add new references to existing ones
+        const allReferences = [...state.fileReferences, ...newReferences];
+        
+        // Find which references are not yet matched
+        const mappedReferences = new Set(mappings.map(m => m.reference));
+        const newUnmatched = allReferences.filter(ref => !mappedReferences.has(ref.description));
+        
+        // Set next reference if none currently selected
+        const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
+        
+        const newState = {
+          ...state,
+          fileReferences: allReferences,
+          unmatchedReferences: newUnmatched,
+          matchedPairs: [...state.matchedPairs, ...mappings], // This should add the imported pairs
+          usedFilePaths: new Set([...state.usedFilePaths, ...usedPaths]),
+          currentReference: state.currentReference || nextReference,
+          originalReferencesCount: allReferences.length,
+          folderName: folderName || state.folderName,
+          selectedReferences: [],
+          selectedFilePaths: [],
+          selectedResult: null,
+        };
+  
+  console.log('New matched pairs count:', newState.matchedPairs.length);
+  return newState;
+}
+
     default:
       return state;
   }
@@ -409,6 +448,10 @@ export function MatcherProvider({ children }: { children: ReactNode }) {
     updateFilePathsOnly: useCallback((filePaths: string[]) => {
       dispatch({ type: 'UPDATE_FILE_PATHS_ONLY', payload: filePaths });
     }, []),
+
+    importMappings: useCallback((mappings: MatchedPair[], newReferences: FileReference[], usedPaths: Set<string>, folderName?: string) => {
+      dispatch({ type: 'IMPORT_MAPPINGS', payload: { mappings, newReferences, usedPaths, folderName } });
+    }, []),
   };
 
   // Initialize data method
@@ -435,8 +478,9 @@ export function MatcherProvider({ children }: { children: ReactNode }) {
 }
 
 interface MatcherContextWithInit extends MatcherContextType {
-  initializeData: (fileReferences: FileReference[], filePaths: string[]) => void;
+  initializeData: (fileReferences: FileReference[], filePaths: string[], folderName?: string) => void;
   setSelectedResult: (result: FileMatch | null) => void;
+  importMappings: (mappings: MatchedPair[], newReferences: FileReference[], usedPaths: Set<string>, folderName?: string) => void;
 }
 
 export function useMatcher(): MatcherContextWithInit {
@@ -445,10 +489,10 @@ export function useMatcher(): MatcherContextWithInit {
     throw new Error('useMatcher must be used within a MatcherProvider');
   }
   
-  const initializeData = useCallback((fileReferences: FileReference[], filePaths: string[]) => {
-  // @ts-ignore - we need this for initialization
-  context.__dispatch?.({ type: 'INITIALIZE_DATA', payload: { fileReferences, filePaths } });
-}, [context]);
+  const initializeData = useCallback((fileReferences: FileReference[], filePaths: string[], folderName?: string) => {
+    // @ts-ignore - we need this for initialization
+    context.__dispatch?.({ type: 'INITIALIZE_DATA', payload: { fileReferences, filePaths, folderName } });
+  }, [context]);
 
   const setSelectedResult = useCallback((result: FileMatch | null) => {
     // @ts-ignore - we need this for result selection
@@ -459,5 +503,6 @@ export function useMatcher(): MatcherContextWithInit {
     ...context,
     initializeData,
     setSelectedResult,
+    importMappings: context.importMappings, // Explicitly include this
   };
 }

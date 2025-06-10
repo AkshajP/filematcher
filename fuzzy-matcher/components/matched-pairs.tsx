@@ -10,6 +10,8 @@ interface MatchedPairsProps {
   onRemoveMatch: (index: number) => void;
 }
 export function MatchedPairs({ matchedPairs, onRemoveMatch }: MatchedPairsProps) {
+  console.log('MatchedPairs component received:', matchedPairs.length, 'pairs');
+  
   return (
     <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-full">
       {/* Header */}

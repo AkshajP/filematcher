@@ -3,11 +3,13 @@
 import { useRef } from "react";
 import { Button } from "./ui/button";
 
+
 interface HeaderProps {
   onExport: () => void;
   onImportFiles?: (files: FileList) => void;    // For reference/mapping files
   onImportFolder?: (files: FileList) => void;   // For folder structure only
   onImportReferences?: (files: FileList) => void; // For CSV/Excel references
+  onImportMappings?: (files: FileList) => void;   // For mapping imports
   onDownloadTemplate?: () => void;               // For template download
   onLoadFallbackData?: () => void;
 }
@@ -18,11 +20,13 @@ export function Header({
   onImportFolder, 
   onImportReferences,
   onDownloadTemplate,
-  onLoadFallbackData 
+  onLoadFallbackData ,
+  onImportMappings
 }: HeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const referenceInputRef = useRef<HTMLInputElement>(null);
+   const mappingInputRef = useRef<HTMLInputElement>(null); // Add this line
 
   const handleFileImport = () => {
     fileInputRef.current?.click();
@@ -53,6 +57,18 @@ export function Header({
     const files = event.target.files;
     if (files && files.length > 0 && onImportFolder) {
       onImportFolder(files);
+    }
+    // Reset the input
+    event.target.value = '';
+  };
+
+  const handleMappingImport = () => {
+    mappingInputRef.current?.click();
+  };
+  const handleMappingChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0 && onImportMappings) {
+      onImportMappings(files);
     }
     // Reset the input
     event.target.value = '';
@@ -90,6 +106,9 @@ export function Header({
           <Button variant="default" size="sm" className="bg-emerald-700 hover:bg-emerald-600">
             Suggested Mappings
           </Button>
+          <Button variant="outline" size="sm" onClick={handleMappingImport}>
+            Import Mappings
+          </Button>
         </div>
       </div>
 
@@ -115,6 +134,13 @@ export function Header({
         accept=".csv,.xlsx,.xls"
         style={{ display: 'none' }}
         onChange={handleReferenceChange}
+      />
+      <input
+        ref={mappingInputRef}
+        type="file"
+        accept=".csv"
+        style={{ display: 'none' }}
+        onChange={handleMappingChange}
       />
     </header>
   );
