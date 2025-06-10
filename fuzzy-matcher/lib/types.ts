@@ -5,6 +5,13 @@ export interface FileMatch {
   score: number;
 }
 
+export interface FileReference {
+  description: string;
+  date?: string;
+  reference?: string;
+  isGenerated?: boolean; // To distinguish auto-generated vs imported
+}
+
 export interface MatchedPair {
   reference: string;
   path: string;
@@ -12,6 +19,9 @@ export interface MatchedPair {
   timestamp: string;
   method: 'manual' | 'auto' | 'manual-bulk';
   sessionId?: string;
+  // Add the additional reference data for export
+  originalDate?: string;
+  originalReference?: string;
 }
 
 export interface SearchResult extends FileMatch {
@@ -26,22 +36,22 @@ export interface SearchResult extends FileMatch {
 }
 
 export interface MatcherState {
-  fileReferences: string[];
+  fileReferences: FileReference[];
   filePaths: string[];
-  unmatchedReferences: string[];
+  unmatchedReferences: FileReference[];
   matchedPairs: MatchedPair[];
   usedFilePaths: Set<string>;
-  selectedReferences: Array<{ item: string; order: number }>;
+  selectedReferences: Array<{ item: FileReference; order: number }>;
   selectedFilePaths: Array<{ item: string; order: number }>;
-  currentReference: string | null;
+  currentReference: FileReference | null;
   selectedResult: FileMatch | null;
   sessionId: string;
   originalReferencesCount: number;
 }
 
 export interface MatcherActions {
-  selectReference: (reference: string) => void;
-  toggleReferenceSelection: (reference: string) => void;
+  selectReference: (reference: FileReference) => void;
+  toggleReferenceSelection: (reference: FileReference) => void;
   toggleFilePathSelection: (path: string) => void;
   selectAllReferences: () => void;
   confirmMatch: () => void;

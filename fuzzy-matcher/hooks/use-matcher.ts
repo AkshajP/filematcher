@@ -34,45 +34,45 @@ export function useMatcherLogic() {
   }, [matcher]);
 
   // Perform search when search term, current reference, or file paths change
-  useEffect(() => {
-    // If no file paths are loaded, show empty results
-    if (matcher.filePaths.length === 0) {
-      setSearchResults([]);
-      return;
-    }
+useEffect(() => {
+  // If no file paths are loaded, show empty results
+  if (matcher.filePaths.length === 0) {
+    setSearchResults([]);
+    return;
+  }
 
-    // If no current reference and no search term, show all available files
-    if (!matcher.currentReference && !searchTerm.trim()) {
-      const allFiles = matcher.filePaths
-        .filter(path => !matcher.usedFilePaths.has(path))
-        .map(path => ({ path, score: 0 }));
-      setSearchResults(allFiles);
-      return;
-    }
+  // If no current reference and no search term, show all available files
+  if (!matcher.currentReference && !searchTerm.trim()) {
+    const allFiles = matcher.filePaths
+      .filter(path => !matcher.usedFilePaths.has(path))
+      .map(path => ({ path, score: 0 }));
+    setSearchResults(allFiles);
+    return;
+  }
 
-    setIsSearching(true);
+  setIsSearching(true);
 
-    // Use debouncing for better performance
-    const timeoutId = setTimeout(() => {
-      const term = searchTerm || matcher.currentReference || "";
-      const results = searchMatches(
-        term,
-        matcher.filePaths,
-        matcher.usedFilePaths
-      );
-      setSearchResults(results);
-      setIsSearching(false);
-    }, 300);
+  // Use debouncing for better performance
+  const timeoutId = setTimeout(() => {
+    const term = searchTerm || matcher.currentReference?.description || "";
+    const results = searchMatches(
+      term,
+      matcher.filePaths,
+      matcher.usedFilePaths
+    );
+    setSearchResults(results);
+    setIsSearching(false);
+  }, 300);
 
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [
-    searchTerm,
-    matcher.currentReference,
-    matcher.filePaths,
-    matcher.usedFilePaths,
-  ]);
+  return () => {
+    clearTimeout(timeoutId);
+  };
+}, [
+  searchTerm,
+  matcher.currentReference?.description, // Use description instead of the whole object
+  matcher.filePaths,
+  matcher.usedFilePaths,
+]);
 
   // Auto-select first reference when available (only if we have references)
   useEffect(() => {
@@ -132,34 +132,36 @@ export function useMatcherLogic() {
 
   // Export mappings (simplified version)
   const exportMappings = useCallback(() => {
-    const csvData = [
-      ["File Reference", "File Path", "Match Score", "Timestamp", "Method"],
-      ...matcher.matchedPairs.map((pair) => [
-        pair.reference,
-        pair.path,
-        `${(pair.score * 100).toFixed(1)}%`,
-        pair.timestamp,
-        pair.method,
-      ]),
-    ];
+      const csvData = [
+        ["File Reference", "File Path", "Match Score", "Timestamp", "Method", "Original Date", "Original Reference"],
+        ...matcher.matchedPairs.map((pair) => [
+          pair.reference,
+          pair.path,
+          `${(pair.score * 100).toFixed(1)}%`,
+          pair.timestamp,
+          pair.method,
+          pair.originalDate || '',
+          pair.originalReference || ''
+        ]),
+      ];
 
-    const csvContent = csvData
-      .map((row) =>
-        row.map((field) => `"${String(field).replace(/"/g, '""')}"`).join(",")
-      )
-      .join("\n");
+      const csvContent = csvData
+        .map((row) =>
+          row.map((field) => `"${String(field).replace(/"/g, '""')}"`).join(",")
+        )
+        .join("\n");
 
-    // Create and download blob
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `file_mappings_${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+      // Create and download blob
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `file_mappings_${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
 
-    return csvContent;
-  }, [matcher.matchedPairs]);
+      return csvContent;
+    }, [matcher.matchedPairs]);
 
   return {
     // State

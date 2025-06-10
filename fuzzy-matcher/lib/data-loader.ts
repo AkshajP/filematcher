@@ -1,16 +1,21 @@
 // lib/data-loader.ts - Updated Data Loading Functions
 
+import { FileReference } from './types';
+
 export interface DataSources {
-  fileReferences: string[];
+  fileReferences: FileReference[];
   filePaths: string[];
   source: 'fallback' | 'folder-upload' | 'file-upload';
   folderName?: string;
 }
 
 // Parse file references from Doc Description.txt format
-function parseFileReferences(content: string): string[] {
+function parseFileReferences(content: string): FileReference[] {
   const lines = content.split('\n').filter(line => line.trim());
-  return lines.map(line => line.trim());
+  return lines.map(line => ({
+    description: line.trim(),
+    isGenerated: false
+  }));
 }
 
 // Parse file paths from matchings.txt format
@@ -48,7 +53,7 @@ export async function loadDataSources(): Promise<DataSources> {
 }
 
 export async function loadFromFiles(files: FileList): Promise<DataSources> {
-  const fileReferences: string[] = [];
+  const fileReferences: FileReference[] = [];
   const filePaths: string[] = [];
 
   for (const file of Array.from(files)) {
@@ -85,13 +90,13 @@ export async function loadFromFolder(files: FileList): Promise<string[]> {
 
 
 // Helper function to generate references from file paths
-function generateReferencesFromPaths(filePaths: string[]): string[] {
+function generateReferencesFromPaths(filePaths: string[]): FileReference[] {
   return filePaths.map(filePath => {
     const parts = filePath.split('/');
     const fileName = parts.pop() || '';
-    let referenceName = fileName.replace(/\.[^/.]+$/, '');
+    let description = fileName.replace(/\.[^/.]+$/, '');
     
-    referenceName = referenceName
+    description = description
       .replace(/^\w+-/, '')
       .replace(/^RDCC-APPENDIX-\d+-\d+\s*-\s*/, '')
       .replace(/^(ELM-WAH-LTR-\d+|C0+\d+|D0+\d+|B0+\d+)\s*-?\s*/i, '')
@@ -100,11 +105,14 @@ function generateReferencesFromPaths(filePaths: string[]): string[] {
       .trim();
       
     const parentFolder = parts[parts.length - 1];
-    if (parts.length > 2 && parentFolder && !referenceName.toLowerCase().includes(parentFolder.toLowerCase())) {
-      referenceName = `${parentFolder} - ${referenceName}`;
+    if (parts.length > 2 && parentFolder && !description.toLowerCase().includes(parentFolder.toLowerCase())) {
+      description = `${parentFolder} - ${description}`;
     }
     
-    return referenceName || fileName;
+    return {
+      description: description || fileName,
+      isGenerated: true
+    };
   });
 }
 

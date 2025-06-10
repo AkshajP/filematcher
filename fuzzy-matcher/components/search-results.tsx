@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { SearchResult, FileMatch } from "@/lib/types";
+import { SearchResult, FileMatch, FileReference } from "@/lib/types";
 import { useEffect, useState, useRef, useCallback } from "react";
 
 interface SearchResultsProps {
@@ -13,9 +13,9 @@ interface SearchResultsProps {
   onSearchTermChange: (term: string) => void;
   searchResults: SearchResult[];
   isSearching: boolean;
-  currentReference: string | null;
+  currentReference: FileReference | null;
   selectedResult: FileMatch | null;
-  selectedReferences: Array<{ item: string; order: number }>;
+  selectedReferences: Array<{ item: FileReference; order: number }>;
   selectedFilePaths: Array<{ item: string; order: number }>;
   bulkValidation: {
     canBulkMatch: boolean;
@@ -29,6 +29,7 @@ interface SearchResultsProps {
   onConfirmBulkMatch: () => void;
   onSkipReference: () => void;
 }
+
 
 export function SearchResults({
   searchTerm,
@@ -331,7 +332,7 @@ export function SearchResults({
                     <div className="bg-emerald-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold">
                       {nextOrder}
                     </div>
-                    <span>{nextRef?.item}</span>
+                    <span>{nextRef?.item.description}</span>
                   </div>
                 );
               } else {
@@ -343,7 +344,7 @@ export function SearchResults({
               }
             })()
           ) : (
-            <div className="text-sm text-gray-700 mt-1">{currentReference}</div>
+            <div className="text-sm text-gray-700 mt-1">{currentReference?.description}</div>
           )}
         </div>
       )}

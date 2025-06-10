@@ -60,20 +60,19 @@ export default function HomePage() {
   };
 
   const handleImportReferences = async (files: FileList) => {
-  try {
-    const file = files[0]; // Take first file only
-    const result = await importReferencesFromFile(file);
-    
-    // Update the matcher with new references, keeping existing file paths
-    matcher.initializeData(result.references, matcher.filePaths);
-    
-    console.log(`Imported ${result.references.length} references from ${result.fileName}`);
-  } catch (error) {
-    console.error('Failed to import references:', error);
-    // You might want to show a toast notification here
-    alert(`Failed to import references: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-};
+    try {
+      const file = files[0];
+      const result = await importReferencesFromFile(file);
+      
+      // Update the matcher with new references, keeping existing file paths
+      matcher.initializeData(result.references, matcher.filePaths);
+      
+      console.log(`Imported ${result.references.length} references from ${result.fileName}`);
+    } catch (error) {
+      console.error('Failed to import references:', error);
+      alert(`Failed to import references: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
 
 const handleDownloadTemplate = () => {
   try {
