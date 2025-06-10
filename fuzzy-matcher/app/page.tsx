@@ -1,8 +1,8 @@
 'use client';
 
-// app/page.tsx - Main Page Component with Full Import Integration
+// app/page.tsx - Main Page Component with Workflow Integration
 
-import { Header } from '@/components/header';
+import { WorkflowHeader } from '@/components/workflow-header';
 import { FileReferences } from '@/components/file-references';
 import { SearchResults } from '@/components/search-results';
 import { MatchedPairs } from '@/components/matched-pairs';
@@ -12,7 +12,9 @@ import { useMatcherLogic } from '@/hooks/use-matcher';
 import { loadFromFolder, loadFromFiles } from '@/lib/data-loader';
 import { importReferencesFromFile, downloadReferenceTemplate } from '@/lib/reference-loader';
 import { parseExportedCSV, validateImportedMappings, applyImportedMappings, ImportValidationResult, ImportOptions, validateImportedMappingsAgainstCurrentState } from '@/lib/import-manager';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+type WorkflowMode = 'setup' | 'working';
 
 export default function HomePage() {
   const { 
@@ -29,7 +31,10 @@ export default function HomePage() {
     loadFallbackData
   } = useMatcherLogic();
 
-  // Import state management
+  // Workflow state management
+  const [workflowMode, setWorkflowMode] = useState<WorkflowMode>('setup');
+
+  // Import state management (your existing logic)
   const [importDialog, setImportDialog] = useState<{
     isOpen: boolean;
     validationResult?: ImportValidationResult;
@@ -38,17 +43,29 @@ export default function HomePage() {
     isProcessing?: boolean;
   }>({ isOpen: false });
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading file data...</p>
-        </div>
-      </div>
-    );
-  }
+  // Determine current workflow state
+  const indexStatus = {
+    loaded: matcher.fileReferences.length > 0,
+    count: matcher.fileReferences.length,
+    fileName: 'Client Index' // You can track actual filename if needed
+  };
 
+  const folderStatus = {
+    loaded: matcher.filePaths.length > 0,
+    count: matcher.filePaths.length,
+    folderName: matcher.folderName || 'Project Folder'
+  };
+
+  const bothLoaded = indexStatus.loaded && folderStatus.loaded;
+
+  // Auto-transition to working mode when both are loaded
+  useEffect(() => {
+    if (bothLoaded && workflowMode === 'setup') {
+      setWorkflowMode('working');
+    }
+  }, [bothLoaded, workflowMode]);
+
+  // Your existing import handlers
   const handleImportFiles = async (files: FileList) => {
     try {
       const data = await loadFromFiles(files);
@@ -64,7 +81,6 @@ export default function HomePage() {
     try {
       const result = await loadFromFolder(files);
       
-      // Add safety check
       if (!result || !result.filePaths) {
         throw new Error('Invalid folder data returned');
       }
@@ -107,101 +123,101 @@ export default function HomePage() {
   };
 
   const handleImportReferences = async (files: FileList) => {
-  try {
-    const file = files[0];
-    const result = await importReferencesFromFile(file);
-    
-    // Update the matcher with new references, keeping existing file paths and folder name
-    const currentFilePaths = matcher.filePaths || [];
-    const currentFolderName = matcher.folderName || '';
-    
-    matcher.initializeData(result.references, currentFilePaths, currentFolderName);
-    
-    console.log(`Imported ${result.references.length} references from ${result.fileName}`);
-  } catch (error) {
-    console.error('Failed to import references:', error);
-    alert(`Failed to import references: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-};
+    try {
+      const file = files[0];
+      const result = await importReferencesFromFile(file);
+      
+      // Update the matcher with new references, keeping existing file paths and folder name
+      const currentFilePaths = matcher.filePaths || [];
+      const currentFolderName = matcher.folderName || '';
+      
+      matcher.initializeData(result.references, currentFilePaths, currentFolderName);
+      
+      console.log(`Imported ${result.references.length} references from ${result.fileName}`);
+    } catch (error) {
+      console.error('Failed to import references:', error);
+      alert(`Failed to import references: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
 
   const handleImportMappings = async (files: FileList) => {
-  try {
-    const file = files[0];
-    const { metadata, mappings, errors } = await parseExportedCSV(file);
-    
-    if (errors.length > 0) {
-      console.warn('CSV parsing errors:', errors);
+    try {
+      const file = files[0];
+      const { metadata, mappings, errors } = await parseExportedCSV(file);
+      
+      if (errors.length > 0) {
+        console.warn('CSV parsing errors:', errors);
+        if (mappings.length === 0) {
+          alert(`Failed to parse mappings file:\n${errors.join('\n')}`);
+          return;
+        }
+      }
+
       if (mappings.length === 0) {
-        alert(`Failed to parse mappings file:\n${errors.join('\n')}`);
+        alert('No valid mappings found in the file.');
         return;
       }
+
+      // Check if we have BOTH references and file paths loaded
+      if (matcher.filePaths.length === 0 || matcher.fileReferences.length === 0) {
+        alert('Please first upload both:\n1. Your new client index (Import References)\n2. Your new folder structure (Import Folder)\n\nThen try importing mappings again.');
+        return;
+      }
+
+      // Validate against current state (not generate new references)
+      const validationResult = validateImportedMappingsAgainstCurrentState(
+        mappings, 
+        matcher.fileReferences, 
+        matcher.filePaths, 
+        metadata
+      );
+      
+      setImportDialog({
+        isOpen: true,
+        validationResult
+      });
+    } catch (error) {
+      console.error('Failed to import mappings:', error);
+      alert(`Failed to import mappings: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  };
 
-    if (mappings.length === 0) {
-      alert('No valid mappings found in the file.');
-      return;
+  const handleImportConfirm = async (options: ImportOptions) => {
+    if (!importDialog.validationResult) return;
+
+    try {
+      setImportDialog(prev => ({ ...prev, isProcessing: true }));
+
+      const { mappingsToImport, referencesToRestore, usedFilePaths } = applyImportedMappings(
+        importDialog.validationResult.mappings,
+        matcher.filePaths,
+        options,
+        importDialog.validationResult
+      );
+
+      // Apply the import
+      matcher.importMappings(
+        mappingsToImport,
+        referencesToRestore,
+        usedFilePaths,
+        importDialog.validationResult.metadata?.folderName
+      );
+
+      console.log(`Imported ${mappingsToImport.length} mappings and restored ${referencesToRestore.length} missing references`);
+      
+      setImportDialog({ isOpen: false });
+      
+      let message = `Successfully imported ${mappingsToImport.length} mappings`;
+      if (referencesToRestore.length > 0) {
+        message += ` and restored ${referencesToRestore.length} missing references`;
+      }
+      alert(message + '.');
+    } catch (error) {
+      console.error('Failed to apply import:', error);
+      alert(`Failed to apply import: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setImportDialog(prev => ({ ...prev, isProcessing: false }));
     }
-
-    // Check if we have BOTH references and file paths loaded
-    if (matcher.filePaths.length === 0 || matcher.fileReferences.length === 0) {
-      alert('Please first upload both:\n1. Your new client index (Import References)\n2. Your new folder structure (Import Folder)\n\nThen try importing mappings again.');
-      return;
-    }
-
-    // Validate against current state (not generate new references)
-    const validationResult = validateImportedMappingsAgainstCurrentState(
-      mappings, 
-      matcher.fileReferences, 
-      matcher.filePaths, 
-      metadata
-    );
-    
-    setImportDialog({
-      isOpen: true,
-      validationResult
-    });
-  } catch (error) {
-    console.error('Failed to import mappings:', error);
-    alert(`Failed to import mappings: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-};
-
-const handleImportConfirm = async (options: ImportOptions) => {
-  if (!importDialog.validationResult) return;
-
-  try {
-    setImportDialog(prev => ({ ...prev, isProcessing: true }));
-
-    const { mappingsToImport, referencesToRestore, usedFilePaths } = applyImportedMappings(
-      importDialog.validationResult.mappings,
-      matcher.filePaths,
-      options,
-      importDialog.validationResult
-    );
-
-    // Apply the import
-    matcher.importMappings(
-      mappingsToImport,
-      referencesToRestore, // These are the restored missing references
-      usedFilePaths,
-      importDialog.validationResult.metadata?.folderName
-    );
-
-    console.log(`Imported ${mappingsToImport.length} mappings and restored ${referencesToRestore.length} missing references`);
-    
-    setImportDialog({ isOpen: false });
-    
-    let message = `Successfully imported ${mappingsToImport.length} mappings`;
-    if (referencesToRestore.length > 0) {
-      message += ` and restored ${referencesToRestore.length} missing references`;
-    }
-    alert(message + '.');
-  } catch (error) {
-    console.error('Failed to apply import:', error);
-    alert(`Failed to apply import: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    setImportDialog(prev => ({ ...prev, isProcessing: false }));
-  }
-};
+  };
 
   const handleImportCancel = () => {
     setImportDialog({ isOpen: false });
@@ -216,20 +232,77 @@ const handleImportConfirm = async (options: ImportOptions) => {
     }
   };
 
+  // Workflow action handlers
+  const handleStartAutoMatch = () => {
+    // TODO: Implement auto-matching logic here
+    console.log('Starting auto-match...');
+    // You can add your auto-matching algorithm here
+    // The UI will remain in working mode, just run the auto-match
+  };
+
+  const handleImportMappingsWorkflow = () => {
+    // Create file input for mapping import
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = (e) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (files && files.length > 0) {
+        handleImportMappings(files);
+      }
+    };
+    input.click();
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading file data...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <Header 
-        onExport={exportMappings} 
-        onImportFiles={handleImportFiles}
-        onImportFolder={handleImportFolder}
-        onImportReferences={handleImportReferences}
-        onImportMappings={handleImportMappings}
+      {/* Workflow Header - replaces your old Header */}
+      <WorkflowHeader
+        indexStatus={indexStatus}
+        folderStatus={folderStatus}
+        currentMode={workflowMode}
+        onUploadIndex={() => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.csv,.xlsx,.xls';
+          input.onchange = (e) => {
+            const files = (e.target as HTMLInputElement).files;
+            if (files) handleImportReferences(files);
+          };
+          input.click();
+        }}
+        onUploadFolder={() => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.webkitdirectory = true;
+          input.onchange = (e) => {
+            const files = (e.target as HTMLInputElement).files;
+            if (files) handleImportFolder(files);
+          };
+          input.click();
+        }}
         onDownloadTemplate={handleDownloadTemplate}
-        onLoadFallbackData={loadFallbackData}
+        onStartAutoMatch={handleStartAutoMatch}
+        onImportMappings={handleImportMappingsWorkflow}
+        onExport={exportMappings}
+        mappingProgress={{
+          completed: matcher.matchedPairs.length,
+          total: matcher.fileReferences.length
+        }}
       />
       
-      {/* Pending Import Indicator */}
+      {/* Pending Import Indicator - your existing logic */}
       {importDialog.awaitingFolder && (
         <div className="bg-blue-50 border-b border-blue-200 px-8 py-3">
           <div className="text-blue-800 text-sm">
@@ -238,51 +311,55 @@ const handleImportConfirm = async (options: ImportOptions) => {
         </div>
       )}
       
-      {/* Main Content - Three Panel Layout */}
-      <main className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-hidden min-h-0">
-        {/* Left Panel - File References */}
-        <FileReferences 
-          references={matcher.unmatchedReferences}
-          selectedReferences={matcher.selectedReferences}
-          currentReference={matcher.currentReference}
-          originalCount={matcher.originalReferencesCount}
-          onSelectReference={matcher.selectReference}
-          onToggleSelection={matcher.toggleReferenceSelection}
-          onSelectAll={matcher.selectAllReferences}
-          onBulkSkip={matcher.bulkSkipReferences}
-          onBulkDeselect={matcher.bulkDeselectAll}
-          onDetectRemaining={matcher.detectRemainingFiles}
-        />
-        
-        {/* Middle Panel - Search Results */}
-        <SearchResults 
-          searchTerm={searchTerm}
-          onSearchTermChange={setSearchTerm}
-          searchResults={searchResults}
-          isSearching={isSearching}
-          currentReference={matcher.currentReference}
-          selectedResult={matcher.selectedResult}
-          selectedFilePaths={matcher.selectedFilePaths}
-          selectedReferences={matcher.selectedReferences}
-          bulkValidation={bulkValidation}
-          onResultSelect={handleResultSelect}
-          onToggleFilePathSelection={matcher.toggleFilePathSelection}
-          onConfirmMatch={matcher.confirmMatch}
-          onConfirmBulkMatch={matcher.confirmBulkMatch}
-          onSkipReference={matcher.skipReference}
-        />
-        
-        {/* Right Panel - Matched Pairs */}
-        <MatchedPairs 
-          matchedPairs={matcher.matchedPairs}
-          onRemoveMatch={matcher.removeMatch}
-        />
-      </main>
-      
-      {/* Footer Status Bar */}
-      <StatusBar stats={stats} />
+      {/* Main Content - Only show three-panel layout in working mode */}
+      {workflowMode === 'working' && (
+        <>
+          <main className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-hidden min-h-0">
+            {/* Left Panel - File References */}
+            <FileReferences 
+              references={matcher.unmatchedReferences}
+              selectedReferences={matcher.selectedReferences}
+              currentReference={matcher.currentReference}
+              originalCount={matcher.originalReferencesCount}
+              onSelectReference={matcher.selectReference}
+              onToggleSelection={matcher.toggleReferenceSelection}
+              onSelectAll={matcher.selectAllReferences}
+              onBulkSkip={matcher.bulkSkipReferences}
+              onBulkDeselect={matcher.bulkDeselectAll}
+              onDetectRemaining={matcher.detectRemainingFiles}
+            />
+            
+            {/* Middle Panel - Search Results */}
+            <SearchResults 
+              searchTerm={searchTerm}
+              onSearchTermChange={setSearchTerm}
+              searchResults={searchResults}
+              isSearching={isSearching}
+              currentReference={matcher.currentReference}
+              selectedResult={matcher.selectedResult}
+              selectedFilePaths={matcher.selectedFilePaths}
+              selectedReferences={matcher.selectedReferences}
+              bulkValidation={bulkValidation}
+              onResultSelect={handleResultSelect}
+              onToggleFilePathSelection={matcher.toggleFilePathSelection}
+              onConfirmMatch={matcher.confirmMatch}
+              onConfirmBulkMatch={matcher.confirmBulkMatch}
+              onSkipReference={matcher.skipReference}
+            />
+            
+            {/* Right Panel - Matched Pairs */}
+            <MatchedPairs 
+              matchedPairs={matcher.matchedPairs}
+              onRemoveMatch={matcher.removeMatch}
+            />
+          </main>
+          
+          {/* Footer Status Bar - Only in working mode */}
+          <StatusBar stats={stats} />
+        </>
+      )}
 
-      {/* Import Validation Dialog */}
+      {/* Import Validation Dialog - your existing logic */}
       {importDialog.isOpen && importDialog.validationResult && (
         <ImportValidationDialog
           validationResult={importDialog.validationResult}
