@@ -51,4 +51,5 @@ export interface MatcherActions {
   bulkSkipReferences: () => void;
   bulkDeselectAll: () => void;
   detectRemainingFiles: () => void;
+  updateFilePathsOnly: (filePaths: string[]) => void;
 }

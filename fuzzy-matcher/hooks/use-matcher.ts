@@ -14,28 +14,26 @@ export function useMatcherLogic() {
   const [isSearching, setIsSearching] = useState(false);
   const [isProcessingFolder, setIsProcessingFolder] = useState(false);
 
-  // Initialize data on mount
   useEffect(() => {
-    const initializeData = async () => {
-      try {
-        setIsLoading(true);
-        const data = await loadDataSources();
+  // Only set loading to false, don't auto-load data
+  // Data should only be loaded via explicit import actions
+  if (matcher.fileReferences.length === 0) {
+    setIsLoading(false);
+  }
+}, [matcher.fileReferences.length]);
 
-        // Initialize the matcher context with data
-        matcher.initializeData(data.fileReferences, data.filePaths);
-      } catch (error) {
-        console.error("Failed to initialize data:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    if (matcher.fileReferences.length === 0) {
-      initializeData();
-    } else {
-      setIsLoading(false);
-    }
-  }, [matcher.fileReferences.length]);
+// Add this new function for explicit data loading
+const loadFallbackData = useCallback(async () => {
+  try {
+    setIsLoading(true);
+    const data = await loadDataSources();
+    matcher.initializeData(data.fileReferences, data.filePaths);
+  } catch (error) {
+    console.error("Failed to load fallback data:", error);
+  } finally {
+    setIsLoading(false);
+  }
+}, [matcher]);
 
   // Perform search when search term or current reference changes
   useEffect(() => {
@@ -166,5 +164,6 @@ export function useMatcherLogic() {
     // Actions
     handleResultSelect,
     exportMappings,
+    loadFallbackData,
   };
 }

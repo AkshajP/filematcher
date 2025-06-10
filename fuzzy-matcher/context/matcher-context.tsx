@@ -5,14 +5,14 @@
 import React, { createContext, useContext, useReducer, useCallback, ReactNode } from 'react';
 import { MatcherState, MatcherActions, MatchedPair, FileMatch } from '@/lib/types';
 
-interface MatcherContextType extends MatcherState, MatcherActions {}
+interface MatcherContextType extends MatcherState, MatcherActions {
+  updateFilePathsOnly: (filePaths: string[]) => void;
+}
 
 const MatcherContext = createContext<MatcherContextType | undefined>(undefined);
 
-
 type MatcherAction =
   | { type: 'INITIALIZE_DATA'; payload: { fileReferences: string[]; filePaths: string[] } }
-  | { type: 'REINITIALIZE_WITH_FOLDER'; payload: { fileReferences: string[]; filePaths: string[] } }
   | { type: 'SELECT_REFERENCE'; payload: string }
   | { type: 'TOGGLE_REFERENCE_SELECTION'; payload: string }
   | { type: 'TOGGLE_FILEPATH_SELECTION'; payload: string }
@@ -25,7 +25,8 @@ type MatcherAction =
   | { type: 'BULK_SKIP_REFERENCES' }
   | { type: 'BULK_DESELECT_ALL' }
   | { type: 'DETECT_REMAINING_FILES' }
-  | { type: 'CLEAR_SELECTIONS' };
+  | { type: 'CLEAR_SELECTIONS' }
+  | { type: 'UPDATE_FILE_PATHS_ONLY'; payload: string[] };
 
 function generateSessionId(): string {
   return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -62,7 +63,7 @@ const initialState: MatcherState = {
   unmatchedReferences: [],
   matchedPairs: [],
   usedFilePaths: new Set(),
- selectedReferences: [],
+  selectedReferences: [],
   selectedFilePaths: [],
   currentReference: null,
   selectedResult: null,
@@ -81,6 +82,15 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
         originalReferencesCount: action.payload.fileReferences.length,
       };
 
+    case 'UPDATE_FILE_PATHS_ONLY':
+      return {
+        ...state,
+        filePaths: action.payload,
+        // Don't change file references, just update paths
+        // Clear used paths that no longer exist
+        usedFilePaths: new Set([...state.usedFilePaths].filter(path => action.payload.includes(path))),
+      };
+
     case 'SELECT_REFERENCE':
       return {
         ...state,
@@ -91,64 +101,64 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
       };
 
     case 'TOGGLE_REFERENCE_SELECTION': {
-  const existing = state.selectedReferences.find(item => item.item === action.payload);
-  let newSelected;
-  
-  if (existing) {
-    // Remove item but keep order numbers intact
-    newSelected = state.selectedReferences.filter(item => item.item !== action.payload);
-  } else {
-    // Find the lowest available order number (fill gaps first)
-    const usedOrders = new Set(state.selectedReferences.map(item => item.order));
-    let nextOrder = 1;
-    
-    // Find the first available order number
-    while (usedOrders.has(nextOrder)) {
-      nextOrder++;
-    }
-    
-    newSelected = [...state.selectedReferences, { item: action.payload, order: nextOrder }];
-  }
-  
-  const selectedResult = newSelected.length > 0 ? null : state.selectedResult;
-  
-  return {
-    ...state,
-    selectedReferences: newSelected,
-    selectedResult,
-  };
-}
-
-    case 'TOGGLE_FILEPATH_SELECTION': {
-  const existing = state.selectedFilePaths.find(item => item.item === action.payload);
-  let newSelected;
-  
-  if (existing) {
-    // Remove item but keep order numbers intact
-    newSelected = state.selectedFilePaths.filter(item => item.item !== action.payload);
-  } else {
-    // Only allow selection if we haven't exceeded reference count
-    if (state.selectedFilePaths.length < state.selectedReferences.length) {
-      // Find the lowest available order number (fill gaps first)
-      const usedOrders = new Set(state.selectedFilePaths.map(item => item.order));
-      let nextOrder = 1;
+      const existing = state.selectedReferences.find(item => item.item === action.payload);
+      let newSelected;
       
-      // Find the first available order number
-      while (usedOrders.has(nextOrder) && nextOrder <= state.selectedReferences.length) {
-        nextOrder++;
+      if (existing) {
+        // Remove item but keep order numbers intact
+        newSelected = state.selectedReferences.filter(item => item.item !== action.payload);
+      } else {
+        // Find the lowest available order number (fill gaps first)
+        const usedOrders = new Set(state.selectedReferences.map(item => item.order));
+        let nextOrder = 1;
+        
+        // Find the first available order number
+        while (usedOrders.has(nextOrder)) {
+          nextOrder++;
+        }
+        
+        newSelected = [...state.selectedReferences, { item: action.payload, order: nextOrder }];
       }
       
-      newSelected = [...state.selectedFilePaths, { item: action.payload, order: nextOrder }];
-    } else {
-      return state; // Don't allow selection
+      const selectedResult = newSelected.length > 0 ? null : state.selectedResult;
+      
+      return {
+        ...state,
+        selectedReferences: newSelected,
+        selectedResult,
+      };
     }
-  }
-  return {
-    ...state,
-    selectedFilePaths: newSelected,
-    selectedResult: null,
-  };
-}
+
+    case 'TOGGLE_FILEPATH_SELECTION': {
+      const existing = state.selectedFilePaths.find(item => item.item === action.payload);
+      let newSelected;
+      
+      if (existing) {
+        // Remove item but keep order numbers intact
+        newSelected = state.selectedFilePaths.filter(item => item.item !== action.payload);
+      } else {
+        // Only allow selection if we haven't exceeded reference count
+        if (state.selectedFilePaths.length < state.selectedReferences.length) {
+          // Find the lowest available order number (fill gaps first)
+          const usedOrders = new Set(state.selectedFilePaths.map(item => item.order));
+          let nextOrder = 1;
+          
+          // Find the first available order number
+          while (usedOrders.has(nextOrder) && nextOrder <= state.selectedReferences.length) {
+            nextOrder++;
+          }
+          
+          newSelected = [...state.selectedFilePaths, { item: action.payload, order: nextOrder }];
+        } else {
+          return state; // Don't allow selection
+        }
+      }
+      return {
+        ...state,
+        selectedFilePaths: newSelected,
+        selectedResult: null,
+      };
+    }
 
     case 'SELECT_ALL_REFERENCES': {
       const allSelected = state.selectedReferences.length === state.unmatchedReferences.length;
@@ -205,44 +215,43 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
     }
 
     case 'CONFIRM_BULK_MATCH': {
-  // Sort by order number before extracting items to ensure correct pairing
-  const refsArray = state.selectedReferences
-    .sort((a, b) => a.order - b.order)
-    .map(item => item.item);
-  const pathsArray = state.selectedFilePaths
-    .sort((a, b) => a.order - b.order)
-    .map(item => item.item);
-  
-  if (refsArray.length !== pathsArray.length || refsArray.length < 2) {
-    return state;
-  }
-  
-  const newPairs: MatchedPair[] = refsArray.map((ref, index) => ({
-    reference: ref,
-    path: pathsArray[index], // Now correctly maps by visual order
-    score: 1.0,
-    timestamp: new Date().toISOString(),
-    method: 'manual-bulk' as const,
-    sessionId: state.sessionId,
-  }));
-  
-  const newUsedPaths = new Set(state.usedFilePaths);
-  pathsArray.forEach(path => newUsedPaths.add(path));
-  
-  const newUnmatched = state.unmatchedReferences.filter(ref => !refsArray.includes(ref));
-  const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
-  
-  return {
-    ...state,
-    matchedPairs: [...state.matchedPairs, ...newPairs],
-    usedFilePaths: newUsedPaths,
-    unmatchedReferences: newUnmatched,
-    selectedReferences: [],
-    selectedFilePaths: [],
-    currentReference: nextReference,
-  };
-}
-    
+      // Sort by order number before extracting items to ensure correct pairing
+      const refsArray = state.selectedReferences
+        .sort((a, b) => a.order - b.order)
+        .map(item => item.item);
+      const pathsArray = state.selectedFilePaths
+        .sort((a, b) => a.order - b.order)
+        .map(item => item.item);
+      
+      if (refsArray.length !== pathsArray.length || refsArray.length < 2) {
+        return state;
+      }
+      
+      const newPairs: MatchedPair[] = refsArray.map((ref, index) => ({
+        reference: ref,
+        path: pathsArray[index], // Now correctly maps by visual order
+        score: 1.0,
+        timestamp: new Date().toISOString(),
+        method: 'manual-bulk' as const,
+        sessionId: state.sessionId,
+      }));
+      
+      const newUsedPaths = new Set(state.usedFilePaths);
+      pathsArray.forEach(path => newUsedPaths.add(path));
+      
+      const newUnmatched = state.unmatchedReferences.filter(ref => !refsArray.includes(ref));
+      const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
+      
+      return {
+        ...state,
+        matchedPairs: [...state.matchedPairs, ...newPairs],
+        usedFilePaths: newUsedPaths,
+        unmatchedReferences: newUnmatched,
+        selectedReferences: [],
+        selectedFilePaths: [],
+        currentReference: nextReference,
+      };
+    }
 
     case 'SKIP_REFERENCE': {
       if (!state.currentReference) return state;
@@ -283,28 +292,28 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
     }
 
     case 'BULK_SKIP_REFERENCES': {
-    const selected = state.selectedReferences.map(item => item.item);
-    const newUnmatched = [...state.unmatchedReferences];
-    
-    // Move selected references to end
-    selected.forEach(ref => {
-      const index = newUnmatched.indexOf(ref);
-      if (index > -1) {
-        newUnmatched.splice(index, 1);
-        newUnmatched.push(ref);
-      }
-    });
-    
-    const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
-    
-    return {
-      ...state,
-      unmatchedReferences: newUnmatched,
-      selectedReferences: [],
-      selectedFilePaths: [],
-      currentReference: nextReference,
-    };
-  }
+      const selected = state.selectedReferences.map(item => item.item);
+      const newUnmatched = [...state.unmatchedReferences];
+      
+      // Move selected references to end
+      selected.forEach(ref => {
+        const index = newUnmatched.indexOf(ref);
+        if (index > -1) {
+          newUnmatched.splice(index, 1);
+          newUnmatched.push(ref);
+        }
+      });
+      
+      const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
+      
+      return {
+        ...state,
+        unmatchedReferences: newUnmatched,
+        selectedReferences: [],
+        selectedFilePaths: [],
+        currentReference: nextReference,
+      };
+    }
 
     case 'BULK_DESELECT_ALL':
       return {
@@ -383,6 +392,10 @@ export function MatcherProvider({ children }: { children: ReactNode }) {
     detectRemainingFiles: useCallback(() => {
       dispatch({ type: 'DETECT_REMAINING_FILES' });
     }, []),
+
+    updateFilePathsOnly: useCallback((filePaths: string[]) => {
+      dispatch({ type: 'UPDATE_FILE_PATHS_ONLY', payload: filePaths });
+    }, []),
   };
 
   // Initialize data method
@@ -404,21 +417,9 @@ export function MatcherProvider({ children }: { children: ReactNode }) {
   return (
     <MatcherContext.Provider value={contextValue}>
       {children}
-      {/* Hidden methods for components */}
-      <div style={{ display: 'none' }}>
-        {/* These are passed via props to components that need them */}
-      </div>
     </MatcherContext.Provider>
   );
 }
-
-// export function useMatcher() {
-//   const context = useContext(MatcherContext);
-//   if (context === undefined) {
-//     throw new Error('useMatcher must be used within a MatcherProvider');
-//   }
-//   return context;
-// }
 
 // Create extended context type with initialization
 interface MatcherContextWithInit extends MatcherContextType {
@@ -433,12 +434,12 @@ export function useMatcher(): MatcherContextWithInit {
   }
   
   const initializeData = useCallback((fileReferences: string[], filePaths: string[]) => {
-    // ts-expect-error - we need this for initialization
+    // @ts-ignore - we need this for initialization
     context.__dispatch?.({ type: 'INITIALIZE_DATA', payload: { fileReferences, filePaths } });
   }, [context]);
 
   const setSelectedResult = useCallback((result: FileMatch | null) => {
-    // ts-expect-error - we need this for result selection
+    // @ts-ignore - we need this for result selection
     context.__dispatch?.({ type: 'SET_SELECTED_RESULT', payload: result });
   }, [context]);
 

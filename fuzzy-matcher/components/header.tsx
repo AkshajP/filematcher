@@ -1,61 +1,43 @@
-// components/header.tsx - Updated Header Component with Folder Upload
+// components/header.tsx - Separate import types
 
-import { Button } from '@/components/ui/button';
-import { useRef, useState } from 'react';
-import { processFolderUpload, validateFolderUpload } from '@/lib/folder-processor';
+import { useRef } from "react";
+import { Button } from "./ui/button";
 
 interface HeaderProps {
   onExport: () => void;
-  onFolderUpload?: (filePaths: string[], folderName: string) => void;
-  isProcessingFolder?: boolean;
+  onImportFiles?: (files: FileList) => void;  // For reference/mapping files
+  onImportFolder?: (files: FileList) => void; // For folder structure only
+  onLoadFallbackData?: () => void;
 }
 
-export function Header({ onExport, onFolderUpload, isProcessingFolder = false }: HeaderProps) {
+export function Header({ onExport, onImportFiles, onImportFolder, onLoadFallbackData }: HeaderProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
-  const [uploadStatus, setUploadStatus] = useState<string>('');
 
-  const handleFolderUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || !onFolderUpload) return;
-
-    console.log('Files selected:', files.length); // Debug log
-    setUploadStatus('Processing folder...');
-
-    try {
-      // Validate the upload
-      const validation = validateFolderUpload(files);
-      if (!validation.isValid) {
-        setUploadStatus(`Error: ${validation.error}`);
-        setTimeout(() => setUploadStatus(''), 3000);
-        return;
-      }
-
-      // Process the folder
-      const result = processFolderUpload(files);
-      console.log('Processing result:', result); // Debug log
-      
-      setUploadStatus(`Loaded ${result.totalFiles} files from "${result.folderName}"`);
-      
-      // Call the callback with the processed data
-      onFolderUpload(result.filePaths, result.folderName);
-      
-      // Clear the success message after 3 seconds
-      setTimeout(() => setUploadStatus(''), 3000);
-      
-    } catch (error) {
-      console.error('Error processing folder:', error);
-      setUploadStatus('Error processing folder');
-      setTimeout(() => setUploadStatus(''), 3000);
-    }
-
-    // Reset the input
-    if (folderInputRef.current) {
-      folderInputRef.current.value = '';
-    }
+  const handleFileImport = () => {
+    fileInputRef.current?.click();
   };
 
-  const triggerFolderUpload = () => {
+  const handleFolderImport = () => {
     folderInputRef.current?.click();
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0 && onImportFiles) {
+      onImportFiles(files);
+    }
+    // Reset the input
+    event.target.value = '';
+  };
+
+  const handleFolderChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0 && onImportFolder) {
+      onImportFolder(files);
+    }
+    // Reset the input
+    event.target.value = '';
   };
 
   return (
@@ -65,64 +47,43 @@ export function Header({ onExport, onFolderUpload, isProcessingFolder = false }:
           TERES File Mapper
         </h1>
         
-        <div className="flex items-center gap-2">
-          {/* Upload Status */}
-          {uploadStatus && (
-            <div className={`text-sm px-3 py-1 rounded ${
-              uploadStatus.startsWith('Error') 
-                ? 'bg-red-100 text-red-700' 
-                : uploadStatus.startsWith('Loaded')
-                ? 'bg-green-100 text-green-700'
-                : 'bg-blue-100 text-blue-700'
-            }`}>
-              {uploadStatus}
-            </div>
-          )}
-          
-          {/* Hidden file input for folder selection */}
-          <input
-            ref={folderInputRef}
-            type="file"
-            // @ts-ignore - webkitdirectory is not in standard types but is widely supported
-            webkitdirectory=""
-            directory=""
-            multiple
-            style={{ display: 'none' }}
-            onChange={handleFolderUpload}
-            accept="*/*"
-          />
-          
-          {/* Upload Folder Button */}
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={triggerFolderUpload}
-            disabled={isProcessingFolder}
-            className="bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700"
-          >
-            {isProcessingFolder ? (
-              <>
-                <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full mr-2"></div>
-                Processing...
-              </>
-            ) : (
-              <>
-                📁 Upload Folder
-              </>
-            )}
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleFileImport}>
+            Import References
           </Button>
-          
-          <Button variant="outline" size="sm">
-            Import Mappings
+          <Button variant="outline" size="sm" onClick={handleFolderImport}>
+            Import Folder
           </Button>
           <Button variant="outline" size="sm" onClick={onExport}>
             Export Mappings
           </Button>
+          {onLoadFallbackData && (
+            <Button variant="outline" size="sm" onClick={onLoadFallbackData}>
+              Load Demo Data
+            </Button>
+          )}
           <Button variant="default" size="sm" className="bg-emerald-700 hover:bg-emerald-600">
             Suggested Mappings
           </Button>
         </div>
       </div>
+
+      {/* Hidden file inputs */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept=".txt,.csv"
+        style={{ display: 'none' }}
+        onChange={handleFileChange}
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        webkitdirectory=""
+        style={{ display: 'none' }}
+        onChange={handleFolderChange}
+      />
     </header>
   );
 }
