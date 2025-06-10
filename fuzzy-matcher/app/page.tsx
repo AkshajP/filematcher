@@ -9,6 +9,7 @@ import { MatchedPairs } from '@/components/matched-pairs';
 import { StatusBar } from '@/components/status-bar';
 import { useMatcherLogic } from '@/hooks/use-matcher';
 import { loadFromFolder, loadFromFiles } from '@/lib/data-loader';
+import { importReferencesFromFile, downloadReferenceTemplate } from '@/lib/reference-loader';
 
 export default function HomePage() {
   const { 
@@ -58,6 +59,31 @@ export default function HomePage() {
     }
   };
 
+  const handleImportReferences = async (files: FileList) => {
+  try {
+    const file = files[0]; // Take first file only
+    const result = await importReferencesFromFile(file);
+    
+    // Update the matcher with new references, keeping existing file paths
+    matcher.initializeData(result.references, matcher.filePaths);
+    
+    console.log(`Imported ${result.references.length} references from ${result.fileName}`);
+  } catch (error) {
+    console.error('Failed to import references:', error);
+    // You might want to show a toast notification here
+    alert(`Failed to import references: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+};
+
+const handleDownloadTemplate = () => {
+  try {
+    downloadReferenceTemplate();
+  } catch (error) {
+    console.error('Failed to download template:', error);
+    alert('Failed to download template. Please try again.');
+  }
+};
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
@@ -65,6 +91,8 @@ export default function HomePage() {
         onExport={exportMappings} 
         onImportFiles={handleImportFiles}
         onImportFolder={handleImportFolder}
+        onImportReferences={handleImportReferences}
+        onDownloadTemplate={handleDownloadTemplate}
         onLoadFallbackData={loadFallbackData}
       />
       
