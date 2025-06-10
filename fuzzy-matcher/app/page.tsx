@@ -8,7 +8,7 @@ import { SearchResults } from '@/components/search-results';
 import { MatchedPairs } from '@/components/matched-pairs';
 import { StatusBar } from '@/components/status-bar';
 import { useMatcherLogic } from '@/hooks/use-matcher';
-import { loadFromFolder } from '@/lib/data-loader';
+import { loadFromFolder, loadFromFiles } from '@/lib/data-loader';
 
 export default function HomePage() {
   const { 
@@ -37,35 +37,36 @@ export default function HomePage() {
       </div>
     );
   }
-  const handleImportFiles = async (files: FileList) => {
-  try {
-    const data = await loadFromFiles(files);
-    matcher.initializeData(data.fileReferences, data.filePaths);
-    console.log(`Imported ${data.fileReferences.length} references and ${data.filePaths.length} file paths`);
-  } catch (error) {
-    console.error('Failed to import files:', error);
-  }
-};
 
-const handleImportFolder = async (files: FileList) => {
-  try {
-    const filePaths = await loadFromFolder(files);
-    matcher.updateFilePathsOnly(filePaths);
-    console.log(`Imported ${filePaths.length} file paths from folder (references unchanged)`);
-  } catch (error) {
-    console.error('Failed to import folder:', error);
-  }
-};
+  const handleImportFiles = async (files: FileList) => {
+    try {
+      const data = await loadFromFiles(files);
+      matcher.initializeData(data.fileReferences, data.filePaths);
+      console.log(`Imported ${data.fileReferences.length} references and ${data.filePaths.length} file paths`);
+    } catch (error) {
+      console.error('Failed to import files:', error);
+    }
+  };
+
+  const handleImportFolder = async (files: FileList) => {
+    try {
+      const filePaths = await loadFromFolder(files);
+      matcher.updateFilePathsOnly(filePaths);
+      console.log(`Imported ${filePaths.length} file paths from folder (references unchanged)`);
+    } catch (error) {
+      console.error('Failed to import folder:', error);
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
       <Header 
-  onExport={exportMappings} 
-  // onImportFiles={handleImportFiles}
-  onImportFolder={handleImportFolder}
-  onLoadFallbackData={loadFallbackData}
-/>
+        onExport={exportMappings} 
+        onImportFiles={handleImportFiles}
+        onImportFolder={handleImportFolder}
+        onLoadFallbackData={loadFallbackData}
+      />
       
       {/* Main Content - Three Panel Layout */}
       <main className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-hidden min-h-0">

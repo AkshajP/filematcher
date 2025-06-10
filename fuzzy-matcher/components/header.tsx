@@ -57,11 +57,6 @@ export function Header({ onExport, onImportFiles, onImportFolder, onLoadFallback
           <Button variant="outline" size="sm" onClick={onExport}>
             Export Mappings
           </Button>
-          {onLoadFallbackData && (
-            <Button variant="outline" size="sm" onClick={onLoadFallbackData}>
-              Load Demo Data
-            </Button>
-          )}
           <Button variant="default" size="sm" className="bg-emerald-700 hover:bg-emerald-600">
             Suggested Mappings
           </Button>

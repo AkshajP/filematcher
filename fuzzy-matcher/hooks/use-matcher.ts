@@ -15,30 +15,38 @@ export function useMatcherLogic() {
   const [isProcessingFolder, setIsProcessingFolder] = useState(false);
 
   useEffect(() => {
-  // Only set loading to false, don't auto-load data
-  // Data should only be loaded via explicit import actions
-  if (matcher.fileReferences.length === 0) {
+    // Only set loading to false, don't auto-load data
+    // Data should only be loaded via explicit import actions
     setIsLoading(false);
-  }
-}, [matcher.fileReferences.length]);
+  }, []);
 
-// Add this new function for explicit data loading
-const loadFallbackData = useCallback(async () => {
-  try {
-    setIsLoading(true);
-    const data = await loadDataSources();
-    matcher.initializeData(data.fileReferences, data.filePaths);
-  } catch (error) {
-    console.error("Failed to load fallback data:", error);
-  } finally {
-    setIsLoading(false);
-  }
-}, [matcher]);
+  // Add this new function for explicit data loading
+  const loadFallbackData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const data = await loadDataSources();
+      matcher.initializeData(data.fileReferences, data.filePaths);
+    } catch (error) {
+      console.error("Failed to load fallback data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [matcher]);
 
-  // Perform search when search term or current reference changes
+  // Perform search when search term, current reference, or file paths change
   useEffect(() => {
-    if (!matcher.currentReference && !searchTerm.trim()) {
+    // If no file paths are loaded, show empty results
+    if (matcher.filePaths.length === 0) {
       setSearchResults([]);
+      return;
+    }
+
+    // If no current reference and no search term, show all available files
+    if (!matcher.currentReference && !searchTerm.trim()) {
+      const allFiles = matcher.filePaths
+        .filter(path => !matcher.usedFilePaths.has(path))
+        .map(path => ({ path, score: 0 }));
+      setSearchResults(allFiles);
       return;
     }
 
@@ -66,14 +74,17 @@ const loadFallbackData = useCallback(async () => {
     matcher.usedFilePaths,
   ]);
 
-  // Auto-select first reference when available
+  // Auto-select first reference when available (only if we have references)
   useEffect(() => {
-    if (!matcher.currentReference && matcher.unmatchedReferences.length > 0) {
+    if (!matcher.currentReference && 
+        matcher.unmatchedReferences.length > 0 && 
+        matcher.fileReferences.length > 0) {
       matcher.selectReference(matcher.unmatchedReferences[0]);
     }
   }, [
     matcher.unmatchedReferences.length,
     matcher.currentReference,
+    matcher.fileReferences.length,
     matcher.selectReference,
   ]);
 
@@ -158,6 +169,7 @@ const loadFallbackData = useCallback(async () => {
     searchResults,
     isLoading,
     isSearching,
+    isProcessingFolder,
     stats,
     bulkValidation,
 
