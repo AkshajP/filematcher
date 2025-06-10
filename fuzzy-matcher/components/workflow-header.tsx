@@ -1,3 +1,5 @@
+// components/workflow-header.tsx - Workflow Header Component
+
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -14,6 +16,7 @@ interface WorkflowHeaderProps {
   onImportMappings: () => void;
   onExport: () => void;
   mappingProgress?: { completed: number; total: number };
+  unmappedCount?: number; // Add this to show auto match availability
 }
 
 export function WorkflowHeader({
@@ -26,7 +29,8 @@ export function WorkflowHeader({
   onStartAutoMatch,
   onImportMappings,
   onExport,
-  mappingProgress
+  mappingProgress,
+  unmappedCount = 0
 }: WorkflowHeaderProps) {
   const bothLoaded = indexStatus.loaded && folderStatus.loaded;
 
@@ -45,9 +49,10 @@ export function WorkflowHeader({
               onClick={onStartAutoMatch} 
               variant="outline" 
               className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+              disabled={unmappedCount === 0}
             >
               <Zap className="w-4 h-4 mr-2" />
-              Auto Match
+              Auto Match {unmappedCount > 0 ? `(${unmappedCount})` : ''}
             </Button>
             <Button 
               onClick={onImportMappings} 
@@ -186,7 +191,27 @@ export function WorkflowHeader({
         </Card>
       )}
 
-      
+      {/* Working Mode Progress Bar */}
+      {currentMode === 'working' && mappingProgress && (
+        <div className="mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <div className="text-sm text-gray-600">
+              Mapping Progress: {mappingProgress.completed} of {mappingProgress.total} references mapped
+            </div>
+            <div className="text-sm font-medium text-emerald-700">
+              {mappingProgress.total > 0 ? Math.round((mappingProgress.completed / mappingProgress.total) * 100) : 0}%
+            </div>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-emerald-600 h-2 rounded-full transition-all duration-300"
+              style={{ 
+                width: `${mappingProgress.total > 0 ? (mappingProgress.completed / mappingProgress.total) * 100 : 0}%` 
+              }}
+            ></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -26,7 +26,7 @@ type MatcherAction =
   | { type: 'BULK_DESELECT_ALL' }
   | { type: 'DETECT_REMAINING_FILES' }
   | { type: 'CLEAR_SELECTIONS' }
-  | { type: 'IMPORT_MAPPINGS' }
+  | { type: 'IMPORT_MAPPINGS'; payload: { mappings: MatchedPair[]; newReferences: FileReference[]; usedPaths: Set<string>; folderName?: string } }
   | { type: 'UPDATE_FILE_PATHS_ONLY'; payload: string[] };
 
 function generateSessionId(): string {
@@ -164,7 +164,7 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
 
     case 'SELECT_ALL_REFERENCES': {
       const allSelected = state.selectedReferences.length === state.unmatchedReferences.length;
-      let newSelected: Array<{ item: string; order: number }> = [];
+      let newSelected: Array<{ item: FileReference; order: number }> = [];
       
       if (!allSelected) {
         newSelected = state.unmatchedReferences.map((ref, index) => ({
@@ -189,146 +189,146 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
       };
 
     case 'CONFIRM_MATCH': {
-  if (!state.currentReference || !state.selectedResult) return state;
-  
-  const newPair: MatchedPair = {
-    reference: state.currentReference.description,
-    path: state.selectedResult.path,
-    score: state.selectedResult.score,
-    timestamp: new Date().toISOString(),
-    method: 'manual',
-    sessionId: state.sessionId,
-    originalDate: state.currentReference.date,
-    originalReference: state.currentReference.reference,
-  };
-  
-  const newUsedPaths = new Set(state.usedFilePaths);
-  newUsedPaths.add(state.selectedResult.path);
-  
-  const newUnmatched = state.unmatchedReferences.filter(ref => ref.description !== state.currentReference?.description);
-  const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
-  
-  return {
-    ...state,
-    matchedPairs: [...state.matchedPairs, newPair],
-    usedFilePaths: newUsedPaths,
-    unmatchedReferences: newUnmatched,
-    currentReference: nextReference,
-    selectedResult: null,
-  };
-}
+      if (!state.currentReference || !state.selectedResult) return state;
+      
+      const newPair: MatchedPair = {
+        reference: state.currentReference.description,
+        path: state.selectedResult.path,
+        score: state.selectedResult.score,
+        timestamp: new Date().toISOString(),
+        method: 'manual',
+        sessionId: state.sessionId,
+        originalDate: state.currentReference.date,
+        originalReference: state.currentReference.reference,
+      };
+      
+      const newUsedPaths = new Set(state.usedFilePaths);
+      newUsedPaths.add(state.selectedResult.path);
+      
+      const newUnmatched = state.unmatchedReferences.filter(ref => ref.description !== state.currentReference?.description);
+      const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
+      
+      return {
+        ...state,
+        matchedPairs: [...state.matchedPairs, newPair],
+        usedFilePaths: newUsedPaths,
+        unmatchedReferences: newUnmatched,
+        currentReference: nextReference,
+        selectedResult: null,
+      };
+    }
 
     case 'CONFIRM_BULK_MATCH': {
-  // Sort by order number before extracting items to ensure correct pairing
-  const refsArray = state.selectedReferences
-    .sort((a, b) => a.order - b.order);
-  const pathsArray = state.selectedFilePaths
-    .sort((a, b) => a.order - b.order)
-    .map(item => item.item);
-  
-  if (refsArray.length !== pathsArray.length || refsArray.length < 2) {
-    return state;
-  }
-  
-  const newPairs: MatchedPair[] = refsArray.map((refItem, index) => ({
-    reference: refItem.item.description,
-    path: pathsArray[index],
-    score: 1.0,
-    timestamp: new Date().toISOString(),
-    method: 'manual-bulk' as const,
-    sessionId: state.sessionId,
-    originalDate: refItem.item.date,
-    originalReference: refItem.item.reference,
-  }));
-  
-  const newUsedPaths = new Set(state.usedFilePaths);
-  pathsArray.forEach(path => newUsedPaths.add(path));
-  
-  const refDescriptions = refsArray.map(ref => ref.item.description);
-  const newUnmatched = state.unmatchedReferences.filter(ref => !refDescriptions.includes(ref.description));
-  const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
-  
-  return {
-    ...state,
-    matchedPairs: [...state.matchedPairs, ...newPairs],
-    usedFilePaths: newUsedPaths,
-    unmatchedReferences: newUnmatched,
-    selectedReferences: [],
-    selectedFilePaths: [],
-    currentReference: nextReference,
-  };
-}
+      // Sort by order number before extracting items to ensure correct pairing
+      const refsArray = state.selectedReferences
+        .sort((a, b) => a.order - b.order);
+      const pathsArray = state.selectedFilePaths
+        .sort((a, b) => a.order - b.order)
+        .map(item => item.item);
+      
+      if (refsArray.length !== pathsArray.length || refsArray.length < 2) {
+        return state;
+      }
+      
+      const newPairs: MatchedPair[] = refsArray.map((refItem, index) => ({
+        reference: refItem.item.description,
+        path: pathsArray[index],
+        score: 1.0,
+        timestamp: new Date().toISOString(),
+        method: 'manual-bulk' as const,
+        sessionId: state.sessionId,
+        originalDate: refItem.item.date,
+        originalReference: refItem.item.reference,
+      }));
+      
+      const newUsedPaths = new Set(state.usedFilePaths);
+      pathsArray.forEach(path => newUsedPaths.add(path));
+      
+      const refDescriptions = refsArray.map(ref => ref.item.description);
+      const newUnmatched = state.unmatchedReferences.filter(ref => !refDescriptions.includes(ref.description));
+      const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
+      
+      return {
+        ...state,
+        matchedPairs: [...state.matchedPairs, ...newPairs],
+        usedFilePaths: newUsedPaths,
+        unmatchedReferences: newUnmatched,
+        selectedReferences: [],
+        selectedFilePaths: [],
+        currentReference: nextReference,
+      };
+    }
 
     case 'SKIP_REFERENCE': {
-  if (!state.currentReference) return state;
-  
-  const index = state.unmatchedReferences.findIndex(ref => ref.description === state.currentReference?.description);
-  if (index === -1) return state;
-  
-  const newUnmatched = [...state.unmatchedReferences];
-  newUnmatched.splice(index, 1);
-  newUnmatched.push(state.currentReference);
-  
-  const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
-  
-  return {
-    ...state,
-    unmatchedReferences: newUnmatched,
-    currentReference: nextReference,
-    selectedResult: null,
-  };
-}
+      if (!state.currentReference) return state;
+      
+      const index = state.unmatchedReferences.findIndex(ref => ref.description === state.currentReference?.description);
+      if (index === -1) return state;
+      
+      const newUnmatched = [...state.unmatchedReferences];
+      newUnmatched.splice(index, 1);
+      newUnmatched.push(state.currentReference);
+      
+      const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
+      
+      return {
+        ...state,
+        unmatchedReferences: newUnmatched,
+        currentReference: nextReference,
+        selectedResult: null,
+      };
+    }
 
     case 'REMOVE_MATCH': {
-  const pair = state.matchedPairs[action.payload];
-  if (!pair) return state;
-  
-  const newUsedPaths = new Set(state.usedFilePaths);
-  newUsedPaths.delete(pair.path);
-  
-  const newPairs = state.matchedPairs.filter((_, index) => index !== action.payload);
-  
-  // Recreate the reference object from the pair
-  const restoredReference: FileReference = {
-    description: pair.reference,
-    date: pair.originalDate,
-    reference: pair.originalReference,
-    isGenerated: false
-  };
-  
-  const newUnmatched = [restoredReference, ...state.unmatchedReferences];
-  
-  return {
-    ...state,
-    matchedPairs: newPairs,
-    usedFilePaths: newUsedPaths,
-    unmatchedReferences: newUnmatched,
-  };
-}
+      const pair = state.matchedPairs[action.payload];
+      if (!pair) return state;
+      
+      const newUsedPaths = new Set(state.usedFilePaths);
+      newUsedPaths.delete(pair.path);
+      
+      const newPairs = state.matchedPairs.filter((_, index) => index !== action.payload);
+      
+      // Recreate the reference object from the pair
+      const restoredReference: FileReference = {
+        description: pair.reference,
+        date: pair.originalDate,
+        reference: pair.originalReference,
+        isGenerated: false
+      };
+      
+      const newUnmatched = [restoredReference, ...state.unmatchedReferences];
+      
+      return {
+        ...state,
+        matchedPairs: newPairs,
+        usedFilePaths: newUsedPaths,
+        unmatchedReferences: newUnmatched,
+      };
+    }
 
     case 'BULK_SKIP_REFERENCES': {
-  const selectedDescriptions = state.selectedReferences.map(item => item.item.description);
-  const newUnmatched = [...state.unmatchedReferences];
-  
-  // Move selected references to end
-  selectedDescriptions.forEach(desc => {
-    const index = newUnmatched.findIndex(ref => ref.description === desc);
-    if (index > -1) {
-      const ref = newUnmatched.splice(index, 1)[0];
-      newUnmatched.push(ref);
+      const selectedDescriptions = state.selectedReferences.map(item => item.item.description);
+      const newUnmatched = [...state.unmatchedReferences];
+      
+      // Move selected references to end
+      selectedDescriptions.forEach(desc => {
+        const index = newUnmatched.findIndex(ref => ref.description === desc);
+        if (index > -1) {
+          const ref = newUnmatched.splice(index, 1)[0];
+          newUnmatched.push(ref);
+        }
+      });
+      
+      const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
+      
+      return {
+        ...state,
+        unmatchedReferences: newUnmatched,
+        selectedReferences: [],
+        selectedFilePaths: [],
+        currentReference: nextReference,
+      };
     }
-  });
-  
-  const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
-  
-  return {
-    ...state,
-    unmatchedReferences: newUnmatched,
-    selectedReferences: [],
-    selectedFilePaths: [],
-    currentReference: nextReference,
-  };
-}
 
     case 'BULK_DESELECT_ALL':
       return {
@@ -355,33 +355,39 @@ function matcherReducer(state: MatcherState, action: MatcherAction): MatcherStat
         selectedResult: null,
       };
 
-      case 'IMPORT_MAPPINGS': {
-          const { mappings, newReferences, usedPaths, folderName } = action.payload;
-          
-          // Add new references to existing ones (these could be restored missing refs)
-          const allReferences = [...state.fileReferences, ...newReferences];
-          
-          // Find which references are not yet matched
-          const mappedReferences = new Set(mappings.map(m => m.reference));
-          const newUnmatched = allReferences.filter(ref => !mappedReferences.has(ref.description));
-          
-          // Set next reference if none currently selected
-          const nextReference = newUnmatched.length > 0 ? newUnmatched[0] : null;
-          
-          return {
-            ...state,
-            fileReferences: allReferences,
-            unmatchedReferences: newUnmatched,
-            matchedPairs: [...state.matchedPairs, ...mappings],
-            usedFilePaths: new Set([...state.usedFilePaths, ...usedPaths]),
-            currentReference: state.currentReference || nextReference,
-            originalReferencesCount: allReferences.length,
-            folderName: folderName || state.folderName,
-            selectedReferences: [],
-            selectedFilePaths: [],
-            selectedResult: null,
-          };
-        }
+    case 'IMPORT_MAPPINGS': {
+        const { mappings, newReferences, usedPaths, folderName } = action.payload;
+        
+        // Add new references to existing ones (these could be restored missing refs)
+        const allReferences = [...state.fileReferences, ...newReferences];
+        
+        // Find which references are now mapped by this import
+        const mappedReferences = new Set(mappings.map(m => m.reference));
+        
+        // Remove newly mapped references from current unmatched list
+        const newUnmatched = state.unmatchedReferences.filter(ref => !mappedReferences.has(ref.description));
+        
+        // Add any new references that aren't already mapped
+        const additionalUnmatched = newReferences.filter(ref => !mappedReferences.has(ref.description));
+        const finalUnmatched = [...newUnmatched, ...additionalUnmatched];
+        
+        // Set next reference if none currently selected
+        const nextReference = finalUnmatched.length > 0 ? finalUnmatched[0] : null;
+        
+        return {
+          ...state,
+          fileReferences: allReferences,
+          unmatchedReferences: finalUnmatched,
+          matchedPairs: [...state.matchedPairs, ...mappings],
+          usedFilePaths: new Set([...state.usedFilePaths, ...usedPaths]),
+          currentReference: state.currentReference || nextReference,
+          originalReferencesCount: allReferences.length,
+          folderName: folderName || state.folderName,
+          selectedReferences: [],
+          selectedFilePaths: [],
+          selectedResult: null,
+        };
+      }
 
     default:
       return state;
@@ -392,11 +398,11 @@ export function MatcherProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(matcherReducer, initialState);
 
   const actions: MatcherActions = {
-    selectReference: useCallback((reference: string) => {
+    selectReference: useCallback((reference: FileReference) => {
       dispatch({ type: 'SELECT_REFERENCE', payload: reference });
     }, []),
 
-    toggleReferenceSelection: useCallback((reference: string) => {
+    toggleReferenceSelection: useCallback((reference: FileReference) => {
       dispatch({ type: 'TOGGLE_REFERENCE_SELECTION', payload: reference });
     }, []),
 
@@ -446,7 +452,7 @@ export function MatcherProvider({ children }: { children: ReactNode }) {
   };
 
   // Initialize data method
-  const initializeData = useCallback((fileReferences: string[], filePaths: string[]) => {
+  const initializeData = useCallback((fileReferences: FileReference[], filePaths: string[]) => {
     dispatch({ type: 'INITIALIZE_DATA', payload: { fileReferences, filePaths } });
   }, []);
 

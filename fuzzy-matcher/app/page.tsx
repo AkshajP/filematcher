@@ -1,6 +1,6 @@
-'use client';
-
 // app/page.tsx - Main Page Component with Workflow Integration
+
+'use client';
 
 import { WorkflowHeader } from '@/components/workflow-header';
 import { FileReferences } from '@/components/file-references';
@@ -8,10 +8,13 @@ import { SearchResults } from '@/components/search-results';
 import { MatchedPairs } from '@/components/matched-pairs';
 import { StatusBar } from '@/components/status-bar';
 import { ImportValidationDialog } from '@/components/import-validation-dialog';
+import { AutoMatchDialog } from '@/components/auto-match-dialog';
 import { useMatcherLogic } from '@/hooks/use-matcher';
 import { loadFromFolder, loadFromFiles } from '@/lib/data-loader';
 import { importReferencesFromFile, downloadReferenceTemplate } from '@/lib/reference-loader';
 import { parseExportedCSV, validateImportedMappings, applyImportedMappings, ImportValidationResult, ImportOptions, validateImportedMappingsAgainstCurrentState } from '@/lib/import-manager';
+import { generateAutoMatchSuggestions, AutoMatchResult, AutoMatchSuggestion } from '@/lib/auto-matcher';
+import { MatchedPair } from '@/lib/types';
 import { useState, useEffect } from 'react';
 
 type WorkflowMode = 'setup' | 'working';
@@ -40,6 +43,13 @@ export default function HomePage() {
     validationResult?: ImportValidationResult;
     awaitingFolder?: boolean;
     pendingImportData?: any;
+    isProcessing?: boolean;
+  }>({ isOpen: false });
+
+  // Auto match state management
+  const [autoMatchDialog, setAutoMatchDialog] = useState<{
+    isOpen: boolean;
+    result?: AutoMatchResult;
     isProcessing?: boolean;
   }>({ isOpen: false });
 
@@ -232,12 +242,108 @@ export default function HomePage() {
     }
   };
 
-  // Workflow action handlers
-  const handleStartAutoMatch = () => {
-    // TODO: Implement auto-matching logic here
-    console.log('Starting auto-match...');
-    // You can add your auto-matching algorithm here
-    // The UI will remain in working mode, just run the auto-match
+  // Auto Match workflow action handlers
+  const handleStartAutoMatch = async () => {
+    // Check prerequisites
+    if (matcher.unmatchedReferences.length === 0) {
+      alert('No unmapped references found to auto-match.');
+      return;
+    }
+
+    if (matcher.filePaths.length === 0) {
+      alert('No file paths loaded. Please upload a folder structure first.');
+      return;
+    }
+
+    try {
+      console.log('Starting auto-match process...');
+      console.log('Unmapped references:', matcher.unmatchedReferences.length);
+      console.log('Available file paths:', matcher.filePaths.length);
+      console.log('Used file paths:', matcher.usedFilePaths.size);
+
+      // Generate auto match suggestions
+      const result = generateAutoMatchSuggestions(
+        matcher.unmatchedReferences,
+        matcher.filePaths,
+        matcher.usedFilePaths
+      );
+
+      console.log('Auto match result:', {
+        totalSuggestions: result.suggestions.length,
+        withPaths: result.suggestions.filter(s => s.suggestedPath).length,
+        highConfidence: result.suggestionsWithHighConfidence,
+        mediumConfidence: result.suggestionsWithMediumConfidence,
+        lowConfidence: result.suggestionsWithLowConfidence
+      });
+
+      if (result.suggestions.filter(s => s.suggestedPath).length === 0) {
+        alert('No suggestions could be generated. Try adjusting your file descriptions or check if files are already matched.');
+        return;
+      }
+
+      // Show auto match dialog
+      setAutoMatchDialog({
+        isOpen: true,
+        result
+      });
+
+      console.log(`Generated ${result.suggestions.length} auto match suggestions`);
+    } catch (error) {
+      console.error('Failed to generate auto match suggestions:', error);
+      alert('Failed to generate suggestions. Please try again.');
+    }
+  };
+
+const handleAutoMatchAccept = async (acceptedSuggestions: AutoMatchSuggestion[]) => {
+  if (acceptedSuggestions.length === 0) {
+    setAutoMatchDialog({ isOpen: false });
+    return;
+  }
+
+  try {
+    setAutoMatchDialog(prev => ({ ...prev, isProcessing: true }));
+
+    console.log(`Applying ${acceptedSuggestions.length} auto-matched pairs...`);
+    console.log('Before import - unmapped references:', matcher.unmatchedReferences.length);
+
+    // Convert accepted suggestions to matched pairs and apply them directly
+    const newMatchedPairs: MatchedPair[] = acceptedSuggestions.map(suggestion => ({
+      reference: suggestion.reference.description,
+      path: suggestion.suggestedPath,
+      score: suggestion.score,
+      timestamp: new Date().toISOString(),
+      method: 'auto' as const,
+      sessionId: matcher.sessionId,
+      originalDate: suggestion.reference.date,
+      originalReference: suggestion.reference.reference,
+    }));
+
+    console.log('Mapping references:', newMatchedPairs.map(p => p.reference));
+
+    // Apply all the matches at once using importMappings
+    const usedPaths = new Set(newMatchedPairs.map(pair => pair.path));
+    
+    matcher.importMappings(
+      newMatchedPairs,
+      [], // No new references to restore
+      usedPaths,
+      matcher.folderName
+    );
+
+    console.log('After import - unmapped references should be reduced');
+    
+    setAutoMatchDialog({ isOpen: false });
+    
+    alert(`Successfully applied ${acceptedSuggestions.length} auto-matched mapping${acceptedSuggestions.length !== 1 ? 's' : ''}.`);
+  } catch (error) {
+    console.error('Failed to apply auto match results:', error);
+    alert(`Failed to apply auto match results: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    setAutoMatchDialog(prev => ({ ...prev, isProcessing: false }));
+  }
+};
+
+  const handleAutoMatchCancel = () => {
+    setAutoMatchDialog({ isOpen: false });
   };
 
   const handleImportMappingsWorkflow = () => {
@@ -300,6 +406,7 @@ export default function HomePage() {
           completed: matcher.matchedPairs.length,
           total: matcher.fileReferences.length
         }}
+        unmappedCount={matcher.unmatchedReferences.length}
       />
       
       {/* Pending Import Indicator - your existing logic */}
@@ -366,6 +473,16 @@ export default function HomePage() {
           onImport={handleImportConfirm}
           onCancel={handleImportCancel}
           isLoading={importDialog.isProcessing}
+        />
+      )}
+
+      {/* Auto Match Dialog */}
+      {autoMatchDialog.isOpen && autoMatchDialog.result && (
+        <AutoMatchDialog
+          autoMatchResult={autoMatchDialog.result}
+          onAccept={handleAutoMatchAccept}
+          onCancel={handleAutoMatchCancel}
+          isProcessing={autoMatchDialog.isProcessing}
         />
       )}
     </div>
