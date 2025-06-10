@@ -360,10 +360,18 @@ export function SearchResults({
       </div>
 
       {/* Search Results */}
+       {/* Search Results */}
       <ScrollArea className="flex-1 p-3 min-h-0">
         {searchResults.length === 0 ? (
           <div className="text-center text-gray-500 py-8">
-            {!searchTerm && currentReference ? (
+            {!searchTerm && !currentReference ? (
+              <>
+                📁 No file paths loaded
+                <div className="text-xs mt-2 text-gray-400">
+                  Upload a folder to load file paths
+                </div>
+              </>
+            ) : !searchTerm && currentReference ? (
               "No file paths found."
             ) : searchTerm ? (
               <>

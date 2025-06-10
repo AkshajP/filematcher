@@ -17,10 +17,12 @@ export default function HomePage() {
     searchResults,
     isLoading,
     isSearching,
+    isProcessingFolder,
     stats,
     bulkValidation,
     handleResultSelect,
     exportMappings,
+    handleFolderUpload,
   } = useMatcherLogic();
 
   if (isLoading) {
@@ -37,7 +39,11 @@ export default function HomePage() {
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
-      <Header onExport={exportMappings} />
+      <Header 
+        onExport={exportMappings} 
+        onFolderUpload={handleFolderUpload}
+        isProcessingFolder={isProcessingFolder}
+      />
       
       {/* Main Content - Three Panel Layout */}
       <main className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-hidden min-h-0">

@@ -9,8 +9,10 @@ interface MatcherContextType extends MatcherState, MatcherActions {}
 
 const MatcherContext = createContext<MatcherContextType | undefined>(undefined);
 
+
 type MatcherAction =
   | { type: 'INITIALIZE_DATA'; payload: { fileReferences: string[]; filePaths: string[] } }
+  | { type: 'REINITIALIZE_WITH_FOLDER'; payload: { fileReferences: string[]; filePaths: string[] } }
   | { type: 'SELECT_REFERENCE'; payload: string }
   | { type: 'TOGGLE_REFERENCE_SELECTION'; payload: string }
   | { type: 'TOGGLE_FILEPATH_SELECTION'; payload: string }
@@ -431,12 +433,12 @@ export function useMatcher(): MatcherContextWithInit {
   }
   
   const initializeData = useCallback((fileReferences: string[], filePaths: string[]) => {
-    // @ts-ignore - we need this for initialization
+    // ts-expect-error - we need this for initialization
     context.__dispatch?.({ type: 'INITIALIZE_DATA', payload: { fileReferences, filePaths } });
   }, [context]);
 
   const setSelectedResult = useCallback((result: FileMatch | null) => {
-    // @ts-ignore - we need this for result selection
+    // ts-expect-error - we need this for result selection
     context.__dispatch?.({ type: 'SET_SELECTED_RESULT', payload: result });
   }, [context]);
 

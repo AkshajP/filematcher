@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { searchMatches } from "@/lib/fuzzy-matcher";
-import { loadDataSources } from "@/lib/data-loader";
+import { loadDataSources, createDataFromFolder } from "@/lib/data-loader";
 import { SearchResult } from "@/lib/types";
 import { useMatcher } from "@/context/matcher-context";
 
@@ -12,6 +12,7 @@ export function useMatcherLogic() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
+  const [isProcessingFolder, setIsProcessingFolder] = useState(false);
 
   // Initialize data on mount
   useEffect(() => {
