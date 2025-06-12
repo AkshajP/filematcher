@@ -69,30 +69,30 @@ export function AutoMatchDialog({
 
     console.log('Range selection:', { start, end, filteredLength: filteredSuggestions.length });
 
-    // Get the reference descriptions in the range
-    const selectedDescriptions = new Set<string>();
+    // Get the reference IDs in the range
+    const selectedIds = new Set<string>();
     for (let i = start; i <= end; i++) {
       if (i >= 0 && i < filteredSuggestions.length) {
         const suggestion = filteredSuggestions[i];
         if (suggestion && suggestion.suggestedPath) {
-          selectedDescriptions.add(suggestion.reference.description);
+          selectedIds.add(suggestion.reference.id);
         }
       }
     }
 
-    console.log('Selected descriptions:', Array.from(selectedDescriptions));
+    console.log('Selected IDs:', Array.from(selectedIds));
 
     // Update suggestions: select items in range, deselect others
     setSuggestions(prev => prev.map(suggestion => ({
       ...suggestion,
-      isSelected: selectedDescriptions.has(suggestion.reference.description)
+      isSelected: selectedIds.has(suggestion.reference.id)
     })));
   }, [filteredSuggestions]);
 
   // Toggle individual suggestion selection
   const toggleSuggestionSelection = useCallback((suggestion: AutoMatchSuggestion) => {
     setSuggestions(prev => prev.map(s => 
-      s.reference.description === suggestion.reference.description
+      s.reference.id === suggestion.reference.id
         ? { ...s, isSelected: !s.isSelected }
         : s
     ));
@@ -101,7 +101,7 @@ export function AutoMatchDialog({
   // Accept a single suggestion
   const acceptSuggestion = useCallback((suggestion: AutoMatchSuggestion) => {
     setSuggestions(prev => prev.map(s => 
-      s.reference.description === suggestion.reference.description
+      s.reference.id === suggestion.reference.id
         ? { ...s, isAccepted: true, isRejected: false, isSelected: false }
         : s
     ));
@@ -110,7 +110,7 @@ export function AutoMatchDialog({
   // Reject a single suggestion
   const rejectSuggestion = useCallback((suggestion: AutoMatchSuggestion) => {
     setSuggestions(prev => prev.map(s => 
-      s.reference.description === suggestion.reference.description
+      s.reference.id === suggestion.reference.id
         ? { ...s, isRejected: true, isAccepted: false, isSelected: false }
         : s
     ));
@@ -118,10 +118,10 @@ export function AutoMatchDialog({
 
   // Select all visible suggestions
   const selectAllVisible = useCallback(() => {
-    const visibleDescriptions = new Set(filteredSuggestions.map(fs => fs.reference.description));
+    const visibleIds = new Set(filteredSuggestions.map(fs => fs.reference.id));
     setSuggestions(prev => prev.map(suggestion => ({
       ...suggestion,
-      isSelected: visibleDescriptions.has(suggestion.reference.description)
+      isSelected: visibleIds.has(suggestion.reference.id)
     })));
   }, [filteredSuggestions]);
 
@@ -151,14 +151,14 @@ export function AutoMatchDialog({
 
   // Select high confidence suggestions
   const selectHighConfidence = useCallback(() => {
-    const highConfidenceDescriptions = new Set(
+    const highConfidenceIds = new Set(
       filteredSuggestions
         .filter(fs => fs.score >= 0.7 && fs.suggestedPath)
-        .map(fs => fs.reference.description)
+        .map(fs => fs.reference.id)
     );
     setSuggestions(prev => prev.map(suggestion => ({
       ...suggestion,
-      isSelected: highConfidenceDescriptions.has(suggestion.reference.description)
+      isSelected: highConfidenceIds.has(suggestion.reference.id)
     })));
   }, [filteredSuggestions]);
 
@@ -483,7 +483,7 @@ export function AutoMatchDialog({
 
                   return (
                     <div
-                      key={suggestion.reference.description}
+                      key={suggestion.reference.id} // Use ID instead of description
                       ref={(el) => { itemRefs.current[index] = el; }}
                       className={`
                         border rounded-lg p-4 transition-all relative group
@@ -521,16 +521,23 @@ export function AutoMatchDialog({
                           )}
                         </div>
 
-                        {/* Reference description */}
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900 truncate">
-                            {suggestion.reference.description}
+                        {/* Reference description with scroll fallback */}
+                        <div className="flex-1 min-w-0 overflow-hidden">
+                          <div className="text-sm font-medium text-gray-900 break-all overflow-x-auto max-w-full">
+                            <div className="min-w-0 whitespace-pre-wrap">{suggestion.reference.description}</div>
                           </div>
-                          {suggestion.reference.date && (
-                            <div className="text-xs text-gray-500">
-                              Date: {suggestion.reference.date}
-                            </div>
-                          )}
+                          <div className="flex flex-wrap gap-1 mt-1 overflow-x-auto max-w-full">
+                            {suggestion.reference.date && (
+                              <span className="text-xs text-gray-500 bg-blue-50 px-1 rounded flex-shrink-0">
+                                Date: <span className="break-all">{suggestion.reference.date}</span>
+                              </span>
+                            )}
+                            {suggestion.reference.reference && (
+                              <span className="text-xs text-gray-500 bg-purple-50 px-1 rounded flex-shrink-0">
+                                Ref: <span className="break-all">{suggestion.reference.reference}</span>
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {/* Arrow */}
@@ -538,15 +545,15 @@ export function AutoMatchDialog({
                           →
                         </div>
 
-                        {/* Suggested file path */}
-                        <div className="flex-1 min-w-0">
+                        {/* Suggested file path with scroll fallback */}
+                        <div className="flex-1 min-w-0 overflow-hidden">
                           {suggestion.suggestedPath ? (
                             <>
-                              <div className="text-xs text-gray-500 font-mono truncate">
-                                {folderPath}/
+                              <div className="text-xs text-gray-500 font-mono break-all overflow-x-auto max-w-full">
+                                <div className="min-w-0 whitespace-pre-wrap">{folderPath}/</div>
                               </div>
-                              <div className="text-sm font-medium text-gray-900 truncate">
-                                {fileName}
+                              <div className="text-sm font-medium text-gray-900 break-all overflow-x-auto max-w-full">
+                                <div className="min-w-0 whitespace-pre-wrap">{fileName}</div>
                               </div>
                             </>
                           ) : (
@@ -570,7 +577,7 @@ export function AutoMatchDialog({
 
                         {/* Individual actions */}
                         {!isAccepted && !isRejected && suggestion.suggestedPath && (
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                             <Button
                               size="sm"
                               variant="outline"

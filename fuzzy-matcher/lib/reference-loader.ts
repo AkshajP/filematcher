@@ -1,6 +1,6 @@
 // lib/reference-loader.ts - Reference Import and Template Functions
 
-import { FileReference } from './types';
+import { FileReference, generateUniqueId } from './types';
 
 export interface ReferenceImportResult {
   references: FileReference[];
@@ -62,6 +62,7 @@ async function parseCSVReferences(file: File): Promise<FileReference[]> {
               const description = row[docDescHeader];
               if (description && String(description).trim()) {
                 const ref: FileReference = {
+                  id: generateUniqueId(),
                   description: String(description).trim(),
                   date: dateHeader && row[dateHeader] ? String(row[dateHeader]).trim() : undefined,
                   reference: referenceHeader && row[referenceHeader] ? String(row[referenceHeader]).trim() : undefined,
@@ -133,6 +134,7 @@ async function parseCSVSimple(file: File): Promise<FileReference[]> {
           
           if (description && description.trim()) {
             const ref: FileReference = {
+              id: generateUniqueId(),
               description: description.trim(),
               date: dateIndex !== -1 && columns[dateIndex] ? columns[dateIndex].trim() : undefined,
               reference: referenceIndex !== -1 && columns[referenceIndex] ? columns[referenceIndex].trim() : undefined,
@@ -205,6 +207,7 @@ async function parseExcelReferences(file: File): Promise<FileReference[]> {
           
           if (description && description.toString().trim()) {
             references.push({
+              id: generateUniqueId(),
               description: description.toString().trim(),
               date: dateIndex !== -1 && row[dateIndex] ? row[dateIndex].toString().trim() : undefined,
               reference: referenceIndex !== -1 && row[referenceIndex] ? row[referenceIndex].toString().trim() : undefined,

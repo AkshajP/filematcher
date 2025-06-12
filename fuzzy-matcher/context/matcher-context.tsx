@@ -55,6 +55,7 @@ function generateReferencesFromPaths(filePaths: string[], usedFilePaths: Set<str
     }
     
     return {
+      id: generateUniqueId(),
       description: description || fileName,
       isGenerated: true
     };

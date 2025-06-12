@@ -41,10 +41,12 @@ export function ImportValidationDialog({
             📁 Import Mappings Validation
           </h2>
           {validationResult.metadata && (
-            <p className="text-emerald-100 text-sm mt-1">
-              From: {validationResult.metadata.folderName} 
-              ({new Date(validationResult.metadata.exportTimestamp).toLocaleDateString()})
-            </p>
+            <div className="text-emerald-100 text-sm mt-1 break-all overflow-x-auto max-w-full">
+              <div className="whitespace-pre-wrap">
+                From: {validationResult.metadata.folderName} 
+                ({new Date(validationResult.metadata.exportTimestamp).toLocaleDateString()})
+              </div>
+            </div>
           )}
         </div>
 
@@ -78,11 +80,11 @@ export function ImportValidationDialog({
           {errors.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
               <h3 className="font-semibold text-red-800 mb-2">⚠️ Validation Warnings</h3>
-              <ul className="text-sm text-red-700 space-y-1">
+              <div className="text-sm text-red-700 space-y-1 overflow-x-auto max-w-full">
                 {errors.map((error, index) => (
-                  <li key={index}>• {error}</li>
+                  <div key={index} className="break-all whitespace-pre-wrap">• {error}</div>
                 ))}
-              </ul>
+              </div>
             </div>
           )}
 
@@ -90,20 +92,21 @@ export function ImportValidationDialog({
             <div className="border rounded-lg p-4 mb-6">
             <h3 className="font-semibold text-gray-800 mb-4">Import Options</h3>
             <div className="space-y-3">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-start space-x-2">
                 <Checkbox
                     id="exactMatches"
                     checked={options.importExactMatches}
                     onCheckedChange={(checked) => 
                     setOptions(prev => ({ ...prev, importExactMatches: !!checked }))
                     }
+                    className="mt-1 flex-shrink-0"
                 />
-                <label htmlFor="exactMatches" className="text-sm">
-                    Import exact matches ({validationSummary.exactMatches} mappings)
+                <label htmlFor="exactMatches" className="text-sm break-all overflow-x-auto max-w-full cursor-pointer">
+                    <div className="whitespace-pre-wrap">Import exact matches ({validationSummary.exactMatches} mappings)</div>
                 </label>
                 </div>
 
-                <div className="flex items-center space-x-2">
+                <div className="flex items-start space-x-2">
                 <Checkbox
                     id="potentialMatches"
                     checked={options.importPotentialMatches}
@@ -111,13 +114,14 @@ export function ImportValidationDialog({
                     setOptions(prev => ({ ...prev, importPotentialMatches: !!checked }))
                     }
                     disabled={potentialMatches.length === 0}
+                    className="mt-1 flex-shrink-0"
                 />
-                <label htmlFor="potentialMatches" className="text-sm">
-                    Import potential matches with path corrections ({potentialMatches.length} mappings)
+                <label htmlFor="potentialMatches" className="text-sm break-all overflow-x-auto max-w-full cursor-pointer">
+                    <div className="whitespace-pre-wrap">Import potential matches with path corrections ({potentialMatches.length} mappings)</div>
                 </label>
                 </div>
 
-                <div className="flex items-center space-x-2">
+                <div className="flex items-start space-x-2">
                 <Checkbox
                     id="restoreMissingReferences"
                     checked={options.restoreMissingReferences}
@@ -125,13 +129,14 @@ export function ImportValidationDialog({
                     setOptions(prev => ({ ...prev, restoreMissingReferences: !!checked }))
                     }
                     disabled={validationResult.missingReferences?.length === 0}
+                    className="mt-1 flex-shrink-0"
                 />
-                <label htmlFor="restoreMissingReferences" className="text-sm">
-                    Restore missing references from old mapping ({validationResult.missingReferences?.length || 0} references)
+                <label htmlFor="restoreMissingReferences" className="text-sm break-all overflow-x-auto max-w-full cursor-pointer">
+                    <div className="whitespace-pre-wrap">Restore missing references from old mapping ({validationResult.missingReferences?.length || 0} references)</div>
                 </label>
                 </div>
 
-                <div className="flex items-center space-x-2">
+                <div className="flex items-start space-x-2">
                 <Checkbox
                     id="missingAsSkipped"
                     checked={options.importMissingAsSkipped}
@@ -139,9 +144,10 @@ export function ImportValidationDialog({
                     setOptions(prev => ({ ...prev, importMissingAsSkipped: !!checked }))
                     }
                     disabled={missingFiles.length === 0}
+                    className="mt-1 flex-shrink-0"
                 />
-                <label htmlFor="missingAsSkipped" className="text-sm">
-                    Skip references for missing files ({missingFiles.length} mappings)
+                <label htmlFor="missingAsSkipped" className="text-sm break-all overflow-x-auto max-w-full cursor-pointer">
+                    <div className="whitespace-pre-wrap">Skip references for missing files ({missingFiles.length} mappings)</div>
                 </label>
                 </div>
             </div>
@@ -156,10 +162,10 @@ export function ImportValidationDialog({
                   <h4 className="font-medium text-green-800">✅ Exact Matches</h4>
                 </div>
                 <ScrollArea className="h-32 p-3">
-                  <div className="space-y-1">
+                  <div className="space-y-1 overflow-x-auto">
                     {exactMatches.slice(0, 10).map((path, index) => (
-                      <div key={index} className="text-xs font-mono text-gray-600">
-                        {path.split('/').pop()}
+                      <div key={index} className="text-xs font-mono text-gray-600 break-all overflow-x-auto max-w-full">
+                        <div className="whitespace-pre-wrap">{path.split('/').pop()}</div>
                       </div>
                     ))}
                     {exactMatches.length > 10 && (
@@ -182,8 +188,8 @@ export function ImportValidationDialog({
                   <div className="space-y-1">
                     {missingFiles.slice(0, 10).map((item, index) => (
                       <div key={index} className="text-xs">
-                        <div className="font-medium text-gray-800">{item.reference}</div>
-                        <div className="font-mono text-gray-500">{item.originalPath}</div>
+                        <div className="font-medium text-gray-800 break-words">{item.reference}</div>
+                        <div className="font-mono text-gray-500 break-all">{item.originalPath}</div>
                       </div>
                     ))}
                     {missingFiles.length > 10 && (
@@ -201,14 +207,14 @@ export function ImportValidationDialog({
                 <div className="border rounded-lg">
                 <div className="bg-orange-50 border-b p-3">
                     <h4 className="font-medium text-orange-800">🚫 Missing References</h4>
-                    <p className="text-xs text-orange-600">These references existed in your old mapping but are not in your current client index</p>
+                    <p className="text-xs text-orange-600 break-words">These references existed in your old mapping but are not in your current client index</p>
                 </div>
                 <ScrollArea className="h-32 p-3">
                     <div className="space-y-1">
                     {validationResult.missingReferences.slice(0, 10).map((item, index) => (
                         <div key={index} className="text-xs border-l-2 border-orange-300 pl-2">
-                        <div className="font-medium text-gray-800">{item.reference}</div>
-                        <div className="font-mono text-gray-500">was mapped to: {item.path}</div>
+                        <div className="font-medium text-gray-800 break-words">{item.reference}</div>
+                        <div className="font-mono text-gray-500 break-all">was mapped to: {item.path}</div>
                         </div>
                     ))}
                     {validationResult.missingReferences.length > 10 && (
@@ -231,9 +237,9 @@ export function ImportValidationDialog({
                   <div className="space-y-2">
                     {potentialMatches.slice(0, 5).map((match, index) => (
                       <div key={index} className="text-xs border-l-2 border-yellow-300 pl-2">
-                        <div className="font-medium text-gray-800">{match.reference}</div>
-                        <div className="text-red-600">Was: {match.originalPath}</div>
-                        <div className="text-green-600">Now: {match.suggestedPath}</div>
+                        <div className="font-medium text-gray-800 break-words">{match.reference}</div>
+                        <div className="text-red-600 break-all">Was: {match.originalPath}</div>
+                        <div className="text-green-600 break-all">Now: {match.suggestedPath}</div>
                       </div>
                     ))}
                     {potentialMatches.length > 5 && (

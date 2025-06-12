@@ -367,11 +367,13 @@ export function SearchResults({
                   (r) => r.order === nextOrder
                 );
                 return (
-                  <div className="flex items-center gap-2 text-sm text-gray-700 mt-1">
-                    <div className="bg-emerald-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold">
+                  <div className="flex items-center gap-2 text-sm text-gray-700 mt-1 overflow-hidden">
+                    <div className="bg-emerald-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
                       {nextOrder}
                     </div>
-                    <span>{nextRef?.item.description}</span>
+                    <div className="break-all overflow-x-auto max-w-full min-w-0">
+                      <div className="whitespace-pre-wrap">{nextRef?.item.description}</div>
+                    </div>
                   </div>
                 );
               } else {
@@ -383,7 +385,9 @@ export function SearchResults({
               }
             })()
           ) : (
-            <div className="text-sm text-gray-700 mt-1">{currentReference?.description}</div>
+            <div className="text-sm text-gray-700 mt-1 break-all overflow-x-auto max-w-full">
+              <div className="whitespace-pre-wrap">{currentReference?.description}</div>
+            </div>
           )}
         </div>
       )}
@@ -491,13 +495,13 @@ export function SearchResults({
                       </div>
                     )}
 
-                    {/* File Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-gray-500 font-mono break-all leading-tight select-none">
-                        {pathParts}/
+                    {/* File Info with scroll fallback */}
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <div className="text-xs text-gray-500 font-mono break-all leading-tight select-none overflow-x-auto max-w-full">
+                        <div className="whitespace-pre-wrap">{pathParts}/</div>
                       </div>
-                      <div className="text-sm font-medium text-gray-900 break-words leading-tight select-none">
-                        {fileName}
+                      <div className="text-sm font-medium text-gray-900 break-all leading-tight select-none overflow-x-auto max-w-full">
+                        <div className="whitespace-pre-wrap">{fileName}</div>
                       </div>
                     </div>
 

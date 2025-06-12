@@ -56,7 +56,7 @@ export function FileReferences({
   // Initialize cursor to current reference
   useEffect(() => {
     if (currentReference && !isMultiSelectMode) {
-      const index = references.findIndex(ref => ref.description === currentReference.description);
+      const index = references.findIndex(ref => ref.id === currentReference.id);
       if (index !== -1) {
         setCursorIndex(index);
       }
@@ -86,7 +86,7 @@ export function FileReferences({
   }, [cursorIndex, scrollToItem, references.length]);
 
   const getSelectionNumber = (reference: FileReference): number | null => {
-    const found = selectedReferences.find((item) => item.item.description === reference.description);
+    const found = selectedReferences.find((item) => item.item.id === reference.id);
     return found ? found.order : null;
   };
 
@@ -95,7 +95,7 @@ export function FileReferences({
   };
 
   const isSelected = (reference: FileReference): boolean => {
-    return selectedReferences.some((item) => item.item.description === reference.description);
+    return selectedReferences.some((item) => item.item.id === reference.id);
   };
 
   // Handle mouse clicks
@@ -141,31 +141,31 @@ export function FileReferences({
     for (let i = start; i <= end; i++) {
       const ref = references[i];
       if (ref) {
-        referencesInRange.add(ref.description);
+        referencesInRange.add(ref.id);
       }
     }
 
     // Find currently selected references that are NOT in the range
-    const currentlySelected = new Set(selectedReferences.map(item => item.item.description));
+    const currentlySelected = new Set(selectedReferences.map(item => item.item.id));
     const referencesToDeselect = new Set<string>();
     
-    currentlySelected.forEach(description => {
-      if (!referencesInRange.has(description)) {
-        referencesToDeselect.add(description);
+    currentlySelected.forEach(id => {
+      if (!referencesInRange.has(id)) {
+        referencesToDeselect.add(id);
       }
     });
 
     // Deselect references outside the range
-    referencesToDeselect.forEach(description => {
-      const ref = references.find(r => r.description === description);
+    referencesToDeselect.forEach(id => {
+      const ref = references.find(r => r.id === id);
       if (ref && isSelected(ref)) {
         onToggleSelection(ref);
       }
     });
 
     // Select all references in the range that aren't already selected
-    referencesInRange.forEach(description => {
-      const ref = references.find(r => r.description === description);
+    referencesInRange.forEach(id => {
+      const ref = references.find(r => r.id === id);
       if (ref && !isSelected(ref)) {
         onToggleSelection(ref);
       }
@@ -394,13 +394,13 @@ export function FileReferences({
       <ScrollArea className="flex-1 p-3 min-h-0">
         {references.map((reference, index) => {
           const isItemSelected = isSelected(reference);
-          const isActive = reference.description === currentReference?.description && !isMultiSelectMode;
+          const isActive = reference.id === currentReference?.id && !isMultiSelectMode;
           const isCursor = index === cursorIndex;
           const selectionNumber = getSelectionNumber(reference);
 
           return (
             <div
-              key={`${reference.description}-${index}`}
+              key={reference.id} // Use ID instead of description-index
               ref={(el) => {
                 itemRefs.current[index] = el;
               }}
@@ -443,14 +443,14 @@ export function FileReferences({
                 )}
 
                 {/* Reference Content */}
-                <div className="flex items-start justify-between flex-1 min-w-0 gap-3">
+                <div className="flex-1 min-w-0 max-w-sm">
                   {/* Description */}
-                  <div className="text-sm text-gray-700 leading-relaxed select-none flex-1">
+                  <div className="text-sm text-gray-700 leading-relaxed select-none text-balance mb-2">
                     {reference.description}
                   </div>
 
                   {/* Badges Container */}
-                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <div className="flex flex-wrap gap-1">
                       {/* Date Badge */}
                       {reference.date && (
                       <TooltipProvider>

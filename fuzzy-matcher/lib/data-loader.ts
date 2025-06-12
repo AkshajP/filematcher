@@ -1,6 +1,6 @@
 // lib/data-loader.ts - Updated Data Loading Functions
 
-import { FileReference } from './types';
+import { FileReference, generateUniqueId } from './types';
 
 export interface DataSources {
   fileReferences: FileReference[];

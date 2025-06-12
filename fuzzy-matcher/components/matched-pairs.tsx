@@ -53,29 +53,41 @@ export function MatchedPairs({ matchedPairs, onRemoveMatch }: MatchedPairsProps)
                     ×
                   </Button>
 
-                  {/* Reference */}
-                  <div className="font-medium text-emerald-700 text-sm mb-2 pr-8">
-                    {pair.reference}
+                  {/* Reference with scroll fallback */}
+                  <div className="font-medium text-emerald-700 text-sm mb-2 pr-8 break-all leading-relaxed overflow-x-auto max-w-full">
+                    <div className="whitespace-pre-wrap">{pair.reference}</div>
                   </div>
 
-                  {/* File Path */}
-                  <div className="text-xs text-gray-600 font-mono break-all leading-relaxed">
-                    <span className="text-gray-400">{pathParts}/</span>
-                    <span className="text-gray-700 font-medium">{fileName}</span>
+                  {/* File Path with scroll fallback */}
+                  <div className="text-xs text-gray-600 font-mono mb-2 leading-relaxed overflow-x-auto max-w-full">
+                    <div className="break-all whitespace-pre-wrap">
+                      <span className="text-gray-400">{pathParts}/</span>
+                      <span className="text-gray-700 font-medium">{fileName}</span>
+                    </div>
                   </div>
 
-                  {/* Metadata */}
-                  <div className="flex items-center gap-2 mt-2">
-                    <Badge variant="outline" className="text-xs">
+                  {/* Metadata with scroll fallback */}
+                  <div className="flex flex-wrap items-center gap-2 overflow-x-auto max-w-full">
+                    <Badge variant="outline" className="text-xs flex-shrink-0">
                       {(pair.score * 100).toFixed(1)}%
                     </Badge>
-                    <Badge variant="outline" className="text-xs">
+                    <Badge variant="outline" className="text-xs flex-shrink-0">
                       {pair.method}
                     </Badge>
                     {pair.timestamp && (
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-gray-400 flex-shrink-0">
                         {new Date(pair.timestamp).toLocaleDateString()}
                       </span>
+                    )}
+                    {pair.originalDate && (
+                      <Badge variant="outline" className="text-xs border-blue-300 text-blue-700 bg-blue-50 flex-shrink-0">
+                        <span className="break-all">{pair.originalDate}</span>
+                      </Badge>
+                    )}
+                    {pair.originalReference && (
+                      <Badge variant="outline" className="text-xs border-purple-300 text-purple-700 bg-purple-50 flex-shrink-0">
+                        <span className="break-all">{pair.originalReference}</span>
+                      </Badge>
                     )}
                   </div>
                 </div>

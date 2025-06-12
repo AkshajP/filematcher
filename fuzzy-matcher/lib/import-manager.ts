@@ -1,7 +1,7 @@
 // lib/import-manager.ts - Import Manager with Validation
 
-import { MatchedPair, FileReference } from './types';
 import { ExportMetadata, createFolderStructureHash } from './export-manager';
+import { MatchedPair, FileReference, generateUniqueId } from './types';
 
 export interface ImportValidationResult {
   isValid: boolean;

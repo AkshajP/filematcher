@@ -6,6 +6,7 @@ export interface FileMatch {
 }
 
 export interface FileReference {
+  id: string; // Add unique identifier
   description: string;
   date?: string;
   reference?: string;
@@ -63,4 +64,9 @@ export interface MatcherActions {
   bulkDeselectAll: () => void;
   detectRemainingFiles: () => void;
   updateFilePathsOnly: (filePaths: string[]) => void;
+}
+
+// Utility function to generate unique IDs
+export function generateUniqueId(): string {
+  return `ref-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
