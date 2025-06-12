@@ -1,2 +1,12 @@
-shift for select
-ref column 
+auto match - on bulk select enter should allow for multi-accept not just the one focus is on.
+import mapping dialog
+    scroll
+    make restoring features default
+    include better descriptions of options or even tooltips with example
+export can add _v1 _v2 based on uploaded mapping name
+
+erase work if user wants to restore previous session mid way (duplicates of matchings come up)
+
+SLOW
+horizontally not visible refs
+change id, doc descriptions can be same also 

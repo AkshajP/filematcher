@@ -10,7 +10,7 @@ import { StatusBar } from '@/components/status-bar';
 import { ImportValidationDialog } from '@/components/import-validation-dialog';
 import { AutoMatchDialog } from '@/components/auto-match-dialog';
 import { useMatcherLogic } from '@/hooks/use-matcher';
-import { loadFromFolder, loadFromFiles } from '@/lib/data-loader';
+import { loadFromFolder } from '@/lib/data-loader';
 import { importReferencesFromFile, downloadReferenceTemplate } from '@/lib/reference-loader';
 import { parseExportedCSV, validateImportedMappings, applyImportedMappings, ImportValidationResult, ImportOptions, validateImportedMappingsAgainstCurrentState } from '@/lib/import-manager';
 import { generateAutoMatchSuggestions, AutoMatchResult, AutoMatchSuggestion } from '@/lib/auto-matcher';
@@ -31,7 +31,6 @@ export default function HomePage() {
     bulkValidation,
     handleResultSelect,
     exportMappings,
-    loadFallbackData
   } = useMatcherLogic();
 
   // Workflow state management
@@ -42,7 +41,7 @@ export default function HomePage() {
     isOpen: boolean;
     validationResult?: ImportValidationResult;
     awaitingFolder?: boolean;
-    pendingImportData?: any;
+    pendingImportData?: unknown;
     isProcessing?: boolean;
   }>({ isOpen: false });
 
@@ -75,17 +74,6 @@ export default function HomePage() {
     }
   }, [bothLoaded, workflowMode]);
 
-  // Your existing import handlers
-  const handleImportFiles = async (files: FileList) => {
-    try {
-      const data = await loadFromFiles(files);
-      matcher.initializeData(data.fileReferences, data.filePaths, data.folderName);
-      console.log(`Imported ${data.fileReferences.length} references and ${data.filePaths.length} file paths`);
-    } catch (error) {
-      console.error('Failed to import files:', error);
-      alert('Failed to import files. Please try again.');
-    }
-  };
 
   const handleImportFolder = async (files: FileList) => {
     try {
@@ -413,7 +401,7 @@ const handleAutoMatchAccept = async (acceptedSuggestions: AutoMatchSuggestion[])
       {importDialog.awaitingFolder && (
         <div className="bg-blue-50 border-b border-blue-200 px-8 py-3">
           <div className="text-blue-800 text-sm">
-            📁 <strong>Waiting for folder:</strong> Please upload the folder structure to validate mappings from "{importDialog.pendingImportData?.metadata?.folderName || 'unknown'}"
+            📁 <strong>Waiting for folder:</strong> Please upload the folder structure to validate mappings from &quot;{importDialog.pendingImportData?.metadata?.folderName || 'unknown'}&quot;
           </div>
         </div>
       )}

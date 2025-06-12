@@ -103,35 +103,6 @@ function extractFolderNameFromPaths(filePaths: string[]): string {
   return parts[0] || 'Unknown';
 }
 
-// Helper function to generate references from file paths
-function generateReferencesFromPaths(filePaths: string[]): FileReference[] {
-  return filePaths.map(filePath => {
-    const parts = filePath.split('/');
-    const fileName = parts.pop() || '';
-    let description = fileName.replace(/\.[^/.]+$/, '');
-    
-    description = description
-      .replace(/^\w+-/, '')
-      .replace(/^RDCC-APPENDIX-\d+-\d+\s*-\s*/, '')
-      .replace(/^(ELM-WAH-LTR-\d+|C0+\d+|D0+\d+|B0+\d+)\s*-?\s*/i, '')
-      .replace(/dated\s+\d+\s+\w+\s+\d+/i, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-      
-    const parentFolder = parts[parts.length - 1];
-    if (parts.length > 2 && parentFolder && !description.toLowerCase().includes(parentFolder.toLowerCase())) {
-      description = `${parentFolder} - ${description}`;
-    }
-    
-    return {
-      description: description || fileName,
-      isGenerated: true
-    };
-  });
-}
-
-// Update the existing loadDataSources function
-
 
 // Add empty data source function
 export function getEmptyDataSources(): DataSources {

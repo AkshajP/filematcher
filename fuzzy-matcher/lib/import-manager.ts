@@ -94,7 +94,9 @@ export async function parseExportedCSV(file: File): Promise<{
             path: columns[1] || '',
             score: parseFloat(columns[2]?.replace('%', '') || '0') / 100,
             timestamp: columns[3] || new Date().toISOString(),
-            method: (columns[4] as any) || 'manual',
+            method: (['manual', 'auto', 'manual-bulk'].includes(columns[4]) 
+                    ? columns[4] 
+                    : 'manual') as 'manual' | 'auto' | 'manual-bulk',
             originalDate: columns[5] || undefined,
             originalReference: columns[6] || undefined,
             sessionId: metadata?.sessionId

@@ -30,7 +30,6 @@ export function FileReferences({
   references,
   selectedReferences,
   currentReference,
-  originalCount,
   onSelectReference,
   onToggleSelection,
   onSelectAll,
@@ -397,7 +396,6 @@ export function FileReferences({
           const isItemSelected = isSelected(reference);
           const isActive = reference.description === currentReference?.description && !isMultiSelectMode;
           const isCursor = index === cursorIndex;
-          const isGenerated = isGeneratedReference(reference);
           const selectionNumber = getSelectionNumber(reference);
 
           return (

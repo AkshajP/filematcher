@@ -24,7 +24,7 @@ async function parseCSVReferences(file: File): Promise<FileReference[]> {
         },
         complete: (results) => {
           try {
-            const data = results.data as Array<Record<string, any>>;
+            const data = results.data as Array<Record<string, unknown>>;
             
             if (data.length === 0) {
               resolve([]);

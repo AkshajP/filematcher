@@ -2,7 +2,6 @@
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ImportValidationResult, ImportOptions } from "@/lib/import-manager";
 import { useState } from "react";
@@ -28,7 +27,7 @@ export function ImportValidationDialog({
 });
 
   const { validationSummary, exactMatches, missingFiles, newFiles, potentialMatches, errors } = validationResult;
-
+  console.log(newFiles);
   const handleImport = () => {
     onImport(options);
   };

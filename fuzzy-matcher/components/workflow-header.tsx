@@ -2,8 +2,7 @@
 
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
-import { Badge } from "./ui/badge";
-import { CheckCircle, AlertCircle, Download, Upload, FolderOpen, Zap, FileText, Play } from "lucide-react";
+import { CheckCircle, AlertCircle, Download, Upload, FolderOpen, Zap, FileText } from "lucide-react";
 
 interface WorkflowHeaderProps {
   indexStatus: { loaded: boolean; count?: number; fileName?: string };
@@ -29,7 +28,6 @@ export function WorkflowHeader({
   onStartAutoMatch,
   onImportMappings,
   onExport,
-  mappingProgress,
   unmappedCount = 0
 }: WorkflowHeaderProps) {
   const bothLoaded = indexStatus.loaded && folderStatus.loaded;
@@ -191,27 +189,7 @@ export function WorkflowHeader({
         </Card>
       )}
 
-      {/* Working Mode Progress Bar */}
-      {currentMode === 'working' && mappingProgress && (
-        <div className="mb-4">
-          <div className="flex justify-between items-center mb-2">
-            <div className="text-sm text-gray-600">
-              Mapping Progress: {mappingProgress.completed} of {mappingProgress.total} references mapped
-            </div>
-            <div className="text-sm font-medium text-emerald-700">
-              {mappingProgress.total > 0 ? Math.round((mappingProgress.completed / mappingProgress.total) * 100) : 0}%
-            </div>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-emerald-600 h-2 rounded-full transition-all duration-300"
-              style={{ 
-                width: `${mappingProgress.total > 0 ? (mappingProgress.completed / mappingProgress.total) * 100 : 0}%` 
-              }}
-            ></div>
-          </div>
-        </div>
-      )}
+      
     </div>
   );
 }

@@ -38,7 +38,6 @@ export function AutoMatchDialog({
   const selectedCount = filteredSuggestions.filter(s => s.isSelected).length;
   const acceptedCount = suggestions.filter(s => s.isAccepted).length;
   const rejectedCount = suggestions.filter(s => s.isRejected).length;
-  const pendingCount = suggestions.length - acceptedCount - rejectedCount;
 
   // Update suggestions when original data changes
   useEffect(() => {

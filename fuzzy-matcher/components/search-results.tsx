@@ -51,17 +51,17 @@ export function SearchResults({
   // Multi-select functionality
   const [cursorIndex, setCursorIndex] = useState<number>(0);
   const [rangeAnchor, setRangeAnchor] = useState<number>(-1);
-  const [isMultiSelectMode, setIsMultiSelectMode] = useState<boolean>(false);
+  // const [isMultiSelectMode, setIsMultiSelectMode] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Update multi-select mode based on selections
-  useEffect(() => {
-    setIsMultiSelectMode(
-      selectedFilePaths.length > 0 || selectedReferences.length > 0
-    );
-  }, [selectedFilePaths.length, selectedReferences.length]);
+  // // Update multi-select mode based on selections
+  // useEffect(() => {
+  //   setIsMultiSelectMode(
+  //     selectedFilePaths.length > 0 || selectedReferences.length > 0
+  //   );
+  // }, [selectedFilePaths.length, selectedReferences.length]);
 
   // Reset cursor when search results change
   useEffect(() => {
@@ -316,7 +316,7 @@ export function SearchResults({
     selectedReferences,
   ]);
 
-  const handleCheckboxChange = (path: string, checked: boolean) => {
+  const handleCheckboxChange = (path: string) => {
     onToggleFilePathSelection(path);
   };
 
@@ -414,7 +414,7 @@ export function SearchResults({
       </>
     ) : searchTerm ? (
       <>
-        No results found for "<strong>{searchTerm}</strong>"
+        No results found for &quot;<strong>{searchTerm}</strong>&quot;
       </>
     ) : (
       "🎉 All file paths have been matched!"
@@ -484,8 +484,8 @@ export function SearchResults({
                         <Checkbox
                           checked={isItemSelected}
                           disabled={!canSelect}
-                          onCheckedChange={(checked) =>
-                            handleCheckboxChange(match.path, !!checked)
+                          onCheckedChange={() =>
+                            handleCheckboxChange(match.path)
                           }
                         />
                       </div>

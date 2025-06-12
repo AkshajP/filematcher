@@ -1,6 +1,6 @@
 // lib/fuzzy-matcher.ts - Core Matching Algorithm
 
-import { FileMatch, SearchResult } from './types';
+import { SearchResult } from './types';
 
 /**
  * Calculates a similarity score between two strings based on word and character overlap.

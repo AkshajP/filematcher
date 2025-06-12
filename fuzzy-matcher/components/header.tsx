@@ -19,18 +19,13 @@ export function Header({
   onImportFiles, 
   onImportFolder, 
   onImportReferences,
-  onDownloadTemplate,
-  onLoadFallbackData ,
+  onDownloadTemplate ,
   onImportMappings
 }: HeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const referenceInputRef = useRef<HTMLInputElement>(null);
    const mappingInputRef = useRef<HTMLInputElement>(null); // Add this line
-
-  const handleFileImport = () => {
-    fileInputRef.current?.click();
-  };
 
   const handleFolderImport = () => {
     folderInputRef.current?.click();
