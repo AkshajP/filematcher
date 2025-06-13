@@ -34,51 +34,51 @@ export function useMatcherLogic() {
     }
   }, [matcher]);
 
-  // Perform search when search term, current reference, or file paths change
+  // Create search index when file paths change
+  const searchIndex = useMemo(() => {
+    const filePaths = matcher.filePaths || [];
+    if (filePaths.length > 0) {
+      return new SearchIndex(filePaths);
+    }
+    return null;
+  }, [matcher.filePaths]);
 
-    useEffect(() => {
-      // Safe guard against undefined
-      const filePaths = matcher.filePaths || [];
-      const usedFilePaths = matcher.usedFilePaths || new Set();
-      
-      // If no file paths are loaded, show empty results
-      if (filePaths.length === 0) {
-        setSearchResults([]);
-        return;
-      }
+  // Perform search when search term, current reference, or search index changes
+  useEffect(() => {
+    const filePaths = matcher.filePaths || [];
+    const usedFilePaths = matcher.usedFilePaths || new Set();
+    
+    // If no file paths are loaded, show empty results
+    if (filePaths.length === 0 || !searchIndex) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
 
-      // If no current reference and no search term, show all available files
-      if (!matcher.currentReference && !searchTerm.trim()) {
-        const allFiles = filePaths
-          .filter(path => !usedFilePaths.has(path))
-          .map(path => ({ path, score: 0 }));
-        setSearchResults(allFiles);
-        return;
-      }
+    // If no current reference and no search term, show all available files
+    if (!matcher.currentReference && !searchTerm.trim()) {
+      const allFiles = filePaths
+        .filter(path => !usedFilePaths.has(path))
+        .map(path => ({ path, score: 0 }));
+      setSearchResults(allFiles);
+      setIsSearching(false);
+      return;
+    }
 
-      setIsSearching(true);
+    setIsSearching(true);
 
-      // Use debouncing for better performance
-      const timeoutId = setTimeout(() => {
-        const term = searchTerm || matcher.currentReference?.description || "";
-        const results = SearchIndex(
-          term,
-          filePaths,
-          usedFilePaths
-        );
-        setSearchResults(results);
-        setIsSearching(false);
-      }, 300);
-
-      return () => {
-        clearTimeout(timeoutId);
-      };
-    }, [
-      searchTerm,
-      matcher.currentReference?.description,
-      matcher.filePaths,
-      matcher.usedFilePaths,
-    ]);
+    // No additional debouncing needed - already handled in SearchResults component
+    const term = searchTerm || matcher.currentReference?.description || "";
+    const results = searchIndex.search(term, usedFilePaths);
+    setSearchResults(results);
+    setIsSearching(false);
+  }, [
+    searchTerm,
+    matcher.currentReference?.description,
+    matcher.filePaths,
+    matcher.usedFilePaths,
+    searchIndex,
+  ]);
 
   // Auto-select first reference when available (only if we have references)
   useEffect(() => {
@@ -140,38 +140,27 @@ export function useMatcherLogic() {
     [matcher.selectedReferences.length, matcher.setSelectedResult]
   );
 
-  // Export mappings (simplified version)
+  // Export mappings (enhanced version with metadata)
   const exportMappings = useCallback(() => {
-      const csvData = [
-        ["File Reference", "File Path", "Match Score", "Timestamp", "Method", "Original Date", "Original Reference"],
-        ...matcher.matchedPairs.map((pair) => [
-          pair.reference,
-          pair.path,
-          `${(pair.score * 100).toFixed(1)}%`,
-          pair.timestamp,
-          pair.method,
-          pair.originalDate || '',
-          pair.originalReference || ''
-        ]),
-      ];
+    const folderName = extractFolderName(matcher.filePaths);
+    const csvContent = exportMappingsWithMetadata(
+      matcher.matchedPairs,
+      matcher.filePaths,
+      folderName,
+      matcher.sessionId
+    );
 
-      const csvContent = csvData
-        .map((row) =>
-          row.map((field) => `"${String(field).replace(/"/g, '""')}"`).join(",")
-        )
-        .join("\n");
+    // Create and download blob
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `file_mappings_${folderName}_${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
 
-      // Create and download blob
-      const blob = new Blob([csvContent], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `file_mappings_${new Date().toISOString().split("T")[0]}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      return csvContent;
-    }, [matcher.matchedPairs]);
+    return csvContent;
+  }, [matcher.matchedPairs, matcher.filePaths, matcher.sessionId]);
 
   return {
     // State

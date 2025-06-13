@@ -218,3 +218,12 @@ export class SearchIndex {
     return matches.slice(0, 50); // Return top 50 for performance
   }
 }
+
+/**
+ * Convenience function for one-off searches without creating a persistent index.
+ * For repeated searches on the same dataset, use the SearchIndex class directly.
+ */
+export function quickSearch(searchTerm: string, filePaths: string[], usedFilePaths: Set<string>): SearchResult[] {
+  const searchIndex = new SearchIndex(filePaths);
+  return searchIndex.search(searchTerm, usedFilePaths);
+}
