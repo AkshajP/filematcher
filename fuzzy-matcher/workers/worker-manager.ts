@@ -1,4 +1,4 @@
-// workers/worker-manager.ts - Production Worker Manager
+// lib/worker-manager.ts - Production Worker Manager
 
 import { SearchResult, FileReference } from '../lib/types';
 import { SearchIndex } from '../lib/fuzzy-matcher'; // Fallback implementation
@@ -244,7 +244,7 @@ export class SearchWorkerManager {
     }
     
     try {
-      this.workerComm = new WorkerCommunicator('../workers/search.worker.ts', this.options);
+      this.workerComm = new WorkerCommunicator('./search.worker.ts', this.options);
       
       // Initialize worker index
       await this.workerComm.request({
@@ -353,7 +353,7 @@ export class AutoMatchWorkerManager {
     // Create worker if needed
     if (!this.workerComm) {
       try {
-        this.workerComm = new WorkerCommunicator('../workers/auto-match.worker.ts', this.options);
+        this.workerComm = new WorkerCommunicator('./auto-match.worker.ts', this.options);
         
         // Set up progress listener
         this.workerComm.onProgress((data) => {

@@ -1,7 +1,7 @@
 // lib/auto-matcher.ts - Auto Match Logic with Worker Integration
 
 import { FileReference } from './types';
-import { getWorkerManager } from '../workers/worker-manager';
+import { getWorkerManager } from './worker-manager';
 
 export interface AutoMatchSuggestion {
   reference: FileReference;

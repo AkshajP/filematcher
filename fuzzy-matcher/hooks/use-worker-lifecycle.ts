@@ -1,7 +1,7 @@
 // hooks/use-worker-lifecycle.ts - Worker Lifecycle Management Hook
 
 import { useEffect, useRef, useCallback } from 'react';
-import { getWorkerManager, terminateAllWorkers } from '@/workers/worker-manager';
+import { getWorkerManager, terminateAllWorkers } from '@/lib/worker-manager';
 
 interface WorkerLifecycleOptions {
   autoTerminateOnUnmount?: boolean;
