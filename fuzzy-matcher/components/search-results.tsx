@@ -26,6 +26,38 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+// Smart debounce that handles spaces intelligently
+function useSmartDebounce(value: string, delay: number): string {
+  const [debouncedValue, setDebouncedValue] = useState<string>(value);
+  const previousValue = useRef<string>(value);
+
+  useEffect(() => {
+    const trimmedValue = value.trim();
+    const trimmedPrevious = previousValue.current.trim();
+    
+    // If only whitespace changed (added/removed trailing spaces), don't trigger search
+    if (trimmedValue === trimmedPrevious && trimmedValue.length > 0) {
+      return;
+    }
+    
+    // If we just added a trailing space and the trimmed version hasn't changed, 
+    // use a longer delay to wait for more input
+    const isJustAddedSpace = value.endsWith(' ') && trimmedValue === trimmedPrevious;
+    const effectiveDelay = isJustAddedSpace ? delay * 2 : delay;
+
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+      previousValue.current = value;
+    }, effectiveDelay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
 interface SearchResultsProps {
   searchTerm: string;
   onSearchTermChange: (term: string) => void;
