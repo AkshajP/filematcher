@@ -14,8 +14,9 @@ import { loadFromFolder } from '@/lib/data-loader';
 import { importReferencesFromFile, downloadReferenceTemplate } from '@/lib/reference-loader';
 import { parseExportedCSV, validateImportedMappings, applyImportedMappings, ImportValidationResult, ImportOptions, validateImportedMappingsAgainstCurrentState } from '@/lib/import-manager';
 import { generateAutoMatchSuggestions, AutoMatchResult, AutoMatchSuggestion } from '@/lib/auto-matcher';
+import { SearchIndex } from '@/lib/fuzzy-matcher'; // New Import
 import { MatchedPair } from '@/lib/types';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react'; // New Import: useMemo
 
 type WorkflowMode = 'setup' | 'working';
 
@@ -24,7 +25,7 @@ export default function HomePage() {
     matcher,
     searchTerm,
     setSearchTerm,
-    searchResults,
+    searchResults: initialSearchResults, // Keep initial results for reference if needed
     isLoading,
     isSearching,
     stats,
@@ -33,10 +34,33 @@ export default function HomePage() {
     exportMappings,
   } = useMatcherLogic();
 
+  // 1. Create the search index only when file paths change
+  const searchIndex = useMemo(() => {
+    if (matcher.filePaths.length > 0) {
+      return new SearchIndex(matcher.filePaths);
+    }
+    return null;
+  }, [matcher.filePaths]);
+
+  // 2. Manage search results locally using the new index
+  const [searchResults, setSearchResults] = useState(initialSearchResults);
+
+  // Effect to run search whenever the term or index changes
+  useEffect(() => {
+    if (searchIndex) {
+      // isSearching is still useful for debouncing visual feedback
+      const results = searchIndex.search(searchTerm, matcher.usedFilePaths);
+      setSearchResults(results);
+    } else {
+      setSearchResults([]);
+    }
+  }, [searchTerm, searchIndex, matcher.usedFilePaths]);
+
+
   // Workflow state management
   const [workflowMode, setWorkflowMode] = useState<WorkflowMode>('setup');
 
-  // Import state management (your existing logic)
+  // Import state management
   const [importDialog, setImportDialog] = useState<{
     isOpen: boolean;
     validationResult?: ImportValidationResult;
@@ -56,7 +80,7 @@ export default function HomePage() {
   const indexStatus = {
     loaded: matcher.fileReferences.length > 0,
     count: matcher.fileReferences.length,
-    fileName: 'Client Index' // You can track actual filename if needed
+    fileName: 'Client Index'
   };
 
   const folderStatus = {
@@ -85,17 +109,13 @@ export default function HomePage() {
       
       const { filePaths, folderName } = result;
       
-      // Check if we have pending import data waiting for folder
       if (importDialog.awaitingFolder && importDialog.pendingImportData) {
         const { metadata, mappings } = importDialog.pendingImportData;
         
-        // Validate the imported mappings against this folder
         const validationResult = validateImportedMappings(mappings, filePaths, metadata);
         
-        // Update file paths first
         matcher.updateFilePathsOnly(filePaths);
         
-        // Show validation dialog
         setImportDialog({
           isOpen: true,
           validationResult,
@@ -103,10 +123,8 @@ export default function HomePage() {
           pendingImportData: undefined
         });
       } else {
-        // Normal folder import
         matcher.updateFilePathsOnly(filePaths);
         
-        // Update the folder name in context if we have references
         const currentReferences = matcher.fileReferences || [];
         if (currentReferences.length > 0) {
           matcher.initializeData(currentReferences, filePaths, folderName);
@@ -125,7 +143,6 @@ export default function HomePage() {
       const file = files[0];
       const result = await importReferencesFromFile(file);
       
-      // Update the matcher with new references, keeping existing file paths and folder name
       const currentFilePaths = matcher.filePaths || [];
       const currentFolderName = matcher.folderName || '';
       
@@ -156,13 +173,11 @@ export default function HomePage() {
         return;
       }
 
-      // Check if we have BOTH references and file paths loaded
       if (matcher.filePaths.length === 0 || matcher.fileReferences.length === 0) {
         alert('Please first upload both:\n1. Your new client index (Import References)\n2. Your new folder structure (Import Folder)\n\nThen try importing mappings again.');
         return;
       }
 
-      // Validate against current state (not generate new references)
       const validationResult = validateImportedMappingsAgainstCurrentState(
         mappings, 
         matcher.fileReferences, 
@@ -193,7 +208,6 @@ export default function HomePage() {
         importDialog.validationResult
       );
 
-      // Apply the import
       matcher.importMappings(
         mappingsToImport,
         referencesToRestore,
@@ -230,9 +244,7 @@ export default function HomePage() {
     }
   };
 
-  // Auto Match workflow action handlers
   const handleStartAutoMatch = async () => {
-    // Check prerequisites
     if (matcher.unmatchedReferences.length === 0) {
       alert('No unmapped references found to auto-match.');
       return;
@@ -245,31 +257,17 @@ export default function HomePage() {
 
     try {
       console.log('Starting auto-match process...');
-      console.log('Unmapped references:', matcher.unmatchedReferences.length);
-      console.log('Available file paths:', matcher.filePaths.length);
-      console.log('Used file paths:', matcher.usedFilePaths.size);
-
-      // Generate auto match suggestions
       const result = generateAutoMatchSuggestions(
         matcher.unmatchedReferences,
         matcher.filePaths,
         matcher.usedFilePaths
       );
 
-      console.log('Auto match result:', {
-        totalSuggestions: result.suggestions.length,
-        withPaths: result.suggestions.filter(s => s.suggestedPath).length,
-        highConfidence: result.suggestionsWithHighConfidence,
-        mediumConfidence: result.suggestionsWithMediumConfidence,
-        lowConfidence: result.suggestionsWithLowConfidence
-      });
-
       if (result.suggestions.filter(s => s.suggestedPath).length === 0) {
         alert('No suggestions could be generated. Try adjusting your file descriptions or check if files are already matched.');
         return;
       }
 
-      // Show auto match dialog
       setAutoMatchDialog({
         isOpen: true,
         result
@@ -282,60 +280,50 @@ export default function HomePage() {
     }
   };
 
-const handleAutoMatchAccept = async (acceptedSuggestions: AutoMatchSuggestion[]) => {
-  if (acceptedSuggestions.length === 0) {
-    setAutoMatchDialog({ isOpen: false });
-    return;
-  }
+  const handleAutoMatchAccept = async (acceptedSuggestions: AutoMatchSuggestion[]) => {
+    if (acceptedSuggestions.length === 0) {
+      setAutoMatchDialog({ isOpen: false });
+      return;
+    }
 
-  try {
-    setAutoMatchDialog(prev => ({ ...prev, isProcessing: true }));
+    try {
+      setAutoMatchDialog(prev => ({ ...prev, isProcessing: true }));
 
-    console.log(`Applying ${acceptedSuggestions.length} auto-matched pairs...`);
-    console.log('Before import - unmapped references:', matcher.unmatchedReferences.length);
+      const newMatchedPairs: MatchedPair[] = acceptedSuggestions.map(suggestion => ({
+        reference: suggestion.reference.description,
+        path: suggestion.suggestedPath,
+        score: suggestion.score,
+        timestamp: new Date().toISOString(),
+        method: 'auto' as const,
+        sessionId: matcher.sessionId,
+        originalDate: suggestion.reference.date,
+        originalReference: suggestion.reference.reference,
+      }));
 
-    // Convert accepted suggestions to matched pairs and apply them directly
-    const newMatchedPairs: MatchedPair[] = acceptedSuggestions.map(suggestion => ({
-      reference: suggestion.reference.description,
-      path: suggestion.suggestedPath,
-      score: suggestion.score,
-      timestamp: new Date().toISOString(),
-      method: 'auto' as const,
-      sessionId: matcher.sessionId,
-      originalDate: suggestion.reference.date,
-      originalReference: suggestion.reference.reference,
-    }));
-
-    console.log('Mapping references:', newMatchedPairs.map(p => p.reference));
-
-    // Apply all the matches at once using importMappings
-    const usedPaths = new Set(newMatchedPairs.map(pair => pair.path));
-    
-    matcher.importMappings(
-      newMatchedPairs,
-      [], // No new references to restore
-      usedPaths,
-      matcher.folderName
-    );
-
-    console.log('After import - unmapped references should be reduced');
-    
-    setAutoMatchDialog({ isOpen: false });
-    
-    alert(`Successfully applied ${acceptedSuggestions.length} auto-matched mapping${acceptedSuggestions.length !== 1 ? 's' : ''}.`);
-  } catch (error) {
-    console.error('Failed to apply auto match results:', error);
-    alert(`Failed to apply auto match results: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    setAutoMatchDialog(prev => ({ ...prev, isProcessing: false }));
-  }
-};
+      const usedPaths = new Set(newMatchedPairs.map(pair => pair.path));
+      
+      matcher.importMappings(
+        newMatchedPairs,
+        [], 
+        usedPaths,
+        matcher.folderName
+      );
+      
+      setAutoMatchDialog({ isOpen: false });
+      
+      alert(`Successfully applied ${acceptedSuggestions.length} auto-matched mapping${acceptedSuggestions.length !== 1 ? 's' : ''}.`);
+    } catch (error) {
+      console.error('Failed to apply auto match results:', error);
+      alert(`Failed to apply auto match results: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setAutoMatchDialog(prev => ({ ...prev, isProcessing: false }));
+    }
+  };
 
   const handleAutoMatchCancel = () => {
     setAutoMatchDialog({ isOpen: false });
   };
 
   const handleImportMappingsWorkflow = () => {
-    // Create file input for mapping import
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.csv';
@@ -361,7 +349,6 @@ const handleAutoMatchAccept = async (acceptedSuggestions: AutoMatchSuggestion[])
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      {/* Workflow Header - replaces your old Header */}
       <WorkflowHeader
         indexStatus={indexStatus}
         folderStatus={folderStatus}
@@ -397,7 +384,6 @@ const handleAutoMatchAccept = async (acceptedSuggestions: AutoMatchSuggestion[])
         unmappedCount={matcher.unmatchedReferences.length}
       />
       
-      {/* Pending Import Indicator - your existing logic */}
       {importDialog.awaitingFolder && (
         <div className="bg-blue-50 border-b border-blue-200 px-8 py-3">
           <div className="text-blue-800 text-sm">
@@ -406,11 +392,9 @@ const handleAutoMatchAccept = async (acceptedSuggestions: AutoMatchSuggestion[])
         </div>
       )}
       
-      {/* Main Content - Only show three-panel layout in working mode */}
       {workflowMode === 'working' && (
         <>
           <main className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-hidden min-h-0">
-            {/* Left Panel - File References */}
             <FileReferences 
               references={matcher.unmatchedReferences}
               selectedReferences={matcher.selectedReferences}
@@ -424,11 +408,11 @@ const handleAutoMatchAccept = async (acceptedSuggestions: AutoMatchSuggestion[])
               onDetectRemaining={matcher.detectRemainingFiles}
             />
             
-            {/* Middle Panel - Search Results */}
+            {/* Middle Panel - Search Results (Now uses index-based results) */}
             <SearchResults 
               searchTerm={searchTerm}
-              onSearchTermChange={setSearchTerm}
-              searchResults={searchResults}
+              onSearchTermChange={setSearchTerm} // This triggers the useEffect search
+              searchResults={searchResults} // Passed from local state
               isSearching={isSearching}
               currentReference={matcher.currentReference}
               selectedResult={matcher.selectedResult}
@@ -442,19 +426,16 @@ const handleAutoMatchAccept = async (acceptedSuggestions: AutoMatchSuggestion[])
               onSkipReference={matcher.skipReference}
             />
             
-            {/* Right Panel - Matched Pairs */}
             <MatchedPairs 
               matchedPairs={matcher.matchedPairs}
               onRemoveMatch={matcher.removeMatch}
             />
           </main>
           
-          {/* Footer Status Bar - Only in working mode */}
           <StatusBar stats={stats} />
         </>
       )}
 
-      {/* Import Validation Dialog - your existing logic */}
       {importDialog.isOpen && importDialog.validationResult && (
         <ImportValidationDialog
           validationResult={importDialog.validationResult}
@@ -464,7 +445,6 @@ const handleAutoMatchAccept = async (acceptedSuggestions: AutoMatchSuggestion[])
         />
       )}
 
-      {/* Auto Match Dialog */}
       {autoMatchDialog.isOpen && autoMatchDialog.result && (
         <AutoMatchDialog
           autoMatchResult={autoMatchDialog.result}

@@ -1,4 +1,4 @@
-// fuzzy-matcher/components/search-results.tsx - Fixed Shift+Arrow Range Selection
+// fuzzy-matcher/components/search-results.tsx - Optimized and Merged
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,25 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchResult, FileMatch, FileReference } from "@/lib/types";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, memo } from "react";
+
+// A simple debounce hook to delay search execution
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    // Cleanup function to clear timeout on re-render
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
 
 interface SearchResultsProps {
   searchTerm: string;
@@ -30,7 +48,8 @@ interface SearchResultsProps {
   onSkipReference: () => void;
 }
 
-export function SearchResults({
+// Wrap the component in React.memo to prevent unnecessary re-renders
+export const SearchResults = memo(function SearchResults({
   searchTerm,
   onSearchTermChange,
   searchResults,
@@ -48,20 +67,29 @@ export function SearchResults({
 }: SearchResultsProps) {
   const isShowingAllFiles = !searchTerm.trim();
 
+  // --- DEBOUNCING LOGIC ---
+  const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm);
+  const debouncedSearchTerm = useDebounce(localSearchTerm, 300); // 300ms delay
+
+  // Effect to trigger search when debounced term changes
+  useEffect(() => {
+    onSearchTermChange(debouncedSearchTerm);
+  }, [debouncedSearchTerm, onSearchTermChange]);
+
+  // Effect to sync local term if external term changes (e.g., on clear)
+  useEffect(() => {
+    if (searchTerm !== localSearchTerm) {
+      setLocalSearchTerm(searchTerm);
+    }
+  }, [searchTerm]);
+  // --- END DEBOUNCING LOGIC ---
+
   // Multi-select functionality
   const [cursorIndex, setCursorIndex] = useState<number>(0);
   const [rangeAnchor, setRangeAnchor] = useState<number>(-1);
-  // const [isMultiSelectMode, setIsMultiSelectMode] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
-
-  // // Update multi-select mode based on selections
-  // useEffect(() => {
-  //   setIsMultiSelectMode(
-  //     selectedFilePaths.length > 0 || selectedReferences.length > 0
-  //   );
-  // }, [selectedFilePaths.length, selectedReferences.length]);
 
   // Reset cursor when search results change
   useEffect(() => {
@@ -176,24 +204,24 @@ export function SearchResults({
     }
 
     // Find currently selected paths that are NOT in the range
-    const currentlySelected = new Set(selectedFilePaths.map(item => item.item));
+    const currentlySelected = new Set(selectedFilePaths.map((item) => item.item));
     const pathsToDeselect = new Set<string>();
-    
-    currentlySelected.forEach(path => {
+
+    currentlySelected.forEach((path) => {
       if (!pathsInRange.has(path)) {
         pathsToDeselect.add(path);
       }
     });
 
     // Deselect paths outside the range
-    pathsToDeselect.forEach(path => {
+    pathsToDeselect.forEach((path) => {
       if (isSelected(path)) {
         onToggleFilePathSelection(path);
       }
     });
 
     // Select all paths in the range that aren't already selected
-    pathsInRange.forEach(path => {
+    pathsInRange.forEach((path) => {
       if (!isSelected(path)) {
         onToggleFilePathSelection(path);
       }
@@ -213,12 +241,12 @@ export function SearchResults({
           event.preventDefault();
           if (cursorIndex < searchResults.length - 1) {
             const newCursorIndex = cursorIndex + 1;
-            
+
             // If no anchor set, start range selection
             if (rangeAnchor === -1) {
               setRangeAnchor(cursorIndex);
             }
-            
+
             // Perform range selection from anchor to new cursor position
             handleRangeSelection(rangeAnchor, newCursorIndex);
             setCursorIndex(newCursorIndex);
@@ -241,12 +269,12 @@ export function SearchResults({
           event.preventDefault();
           if (cursorIndex > 0) {
             const newCursorIndex = cursorIndex - 1;
-            
+
             // If no anchor set, start range selection
             if (rangeAnchor === -1) {
               setRangeAnchor(cursorIndex);
             }
-            
+
             // Perform range selection from anchor to new cursor position
             handleRangeSelection(rangeAnchor, newCursorIndex);
             setCursorIndex(newCursorIndex);
@@ -314,6 +342,9 @@ export function SearchResults({
     selectedFilePaths,
     selectedResult,
     selectedReferences,
+    onConfirmBulkMatch,
+    onConfirmMatch,
+    onToggleFilePathSelection,
   ]);
 
   const handleCheckboxChange = (path: string) => {
@@ -372,7 +403,9 @@ export function SearchResults({
                       {nextOrder}
                     </div>
                     <div className="break-all overflow-x-auto max-w-full min-w-0">
-                      <div className="whitespace-pre-wrap">{nextRef?.item.description}</div>
+                      <div className="whitespace-pre-wrap">
+                        {nextRef?.item.description}
+                      </div>
                     </div>
                   </div>
                 );
@@ -386,44 +419,44 @@ export function SearchResults({
             })()
           ) : (
             <div className="text-sm text-gray-700 mt-1 break-all overflow-x-auto max-w-full">
-              <div className="whitespace-pre-wrap">{currentReference?.description}</div>
+              <div className="whitespace-pre-wrap">
+                {currentReference?.description}
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Search Input */}
+      {/* Search Input - NOW DEBOUNCED */}
       <div className="p-4 border-b">
         <Input
           ref={searchInputRef}
           placeholder="Search for matching file paths..."
-          value={searchTerm}
-          onChange={(e) => onSearchTermChange(e.target.value)}
+          value={localSearchTerm} // Use local state for instant input feedback
+          onChange={(e) => setLocalSearchTerm(e.target.value)} // Update local state on change
           className={`${isSearching ? "animate-pulse" : ""}`}
         />
       </div>
 
-    
-
-       {/* Search Results */}
+      {/* Search Results */}
       <ScrollArea className="flex-1 p-3 min-h-0">
         {searchResults.length === 0 ? (
-  <div className="text-center text-gray-500 py-8">
-    {!searchTerm && !currentReference ? (
-      <>
-        📁 No file paths loaded
-        <div className="text-xs mt-2 text-gray-400">
-          Upload a folder to load file paths
-        </div>
-      </>
-    ) : searchTerm ? (
-      <>
-        No results found for &quot;<strong>{searchTerm}</strong>&quot;
-      </>
-    ) : (
-      "🎉 All file paths have been matched!"
-    )}
-  </div>
+          <div className="text-center text-gray-500 py-8">
+            {!searchTerm && !currentReference ? (
+              <>
+                📁 No file paths loaded
+                <div className="text-xs mt-2 text-gray-400">
+                  Upload a folder to load file paths
+                </div>
+              </>
+            ) : searchTerm ? (
+              <>
+                No results found for &quot;<strong>{searchTerm}</strong>&quot;
+              </>
+            ) : (
+              "🎉 All file paths have been matched!"
+            )}
+          </div>
         ) : (
           <div className="space-y-2">
             {searchResults.map((match, index) => {
@@ -578,4 +611,7 @@ export function SearchResults({
       </div>
     </div>
   );
-}
+});
+
+// Add a display name for better debugging
+SearchResults.displayName = "SearchResults";

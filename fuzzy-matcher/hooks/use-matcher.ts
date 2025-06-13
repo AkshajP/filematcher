@@ -1,7 +1,7 @@
 // hooks/use-matcher.ts - Main Matcher Hook
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { searchMatches } from "@/lib/fuzzy-matcher";
+import { SearchIndex } from "@/lib/fuzzy-matcher";
 import { loadDataSources, createDataFromFolder } from "@/lib/data-loader";
 import { SearchResult } from "@/lib/types";
 import { useMatcher } from "@/context/matcher-context";
@@ -61,7 +61,7 @@ export function useMatcherLogic() {
       // Use debouncing for better performance
       const timeoutId = setTimeout(() => {
         const term = searchTerm || matcher.currentReference?.description || "";
-        const results = searchMatches(
+        const results = SearchIndex(
           term,
           filePaths,
           usedFilePaths
