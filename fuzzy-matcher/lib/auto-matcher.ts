@@ -33,6 +33,9 @@ export function generateAutoMatchSuggestions(
   // Filter out already used file paths
   const unusedFilePaths = availableFilePaths.filter(path => !usedFilePaths.has(path));
   
+  // Create search index for optimization
+  const searchIndex = new SearchIndex(unusedFilePaths);
+  
   // Track which paths we've already suggested to avoid duplicates
   const suggestedPaths = new Set<string>();
   
@@ -45,11 +48,13 @@ export function generateAutoMatchSuggestions(
   });
   
   for (const reference of sortedReferences) {
-    // Get search results for this reference
-    const searchResults = SearchIndex(
+    // Get available paths for this reference (excluding already suggested ones)
+    const availablePaths = unusedFilePaths.filter(path => !suggestedPaths.has(path));
+    
+    // Get search results for this reference using the optimized search index
+    const searchResults = searchIndex.search(
       reference.description,
-      unusedFilePaths.filter(path => !suggestedPaths.has(path)), // Avoid duplicate suggestions
-      new Set() // Empty set since we already filtered unusedFilePaths
+      suggestedPaths // Pass already suggested paths as "used" to avoid duplicates
     );
     
     // Take the best match if it exists and has a reasonable score

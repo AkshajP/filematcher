@@ -3,7 +3,7 @@
 // context/matcher-context.tsx - State Management Context
 
 import React, { createContext, useContext, useReducer, useCallback, ReactNode } from 'react';
-import { MatcherState, MatcherActions, MatchedPair, FileMatch, FileReference } from '@/lib/types';
+import { MatcherState, MatcherActions, MatchedPair, FileMatch, FileReference, generateUniqueId } from '@/lib/types';
 
 interface MatcherContextType extends MatcherState, MatcherActions {
   updateFilePathsOnly: (filePaths: string[]) => void;
