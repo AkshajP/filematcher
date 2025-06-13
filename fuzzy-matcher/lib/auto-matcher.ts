@@ -1,7 +1,7 @@
 // lib/auto-matcher.ts - Auto Match Logic
 
 import { FileReference } from './types';
-import { searchMatches } from './fuzzy-matcher';
+import { SearchIndex } from './fuzzy-matcher';
 
 export interface AutoMatchSuggestion {
   reference: FileReference;
@@ -46,7 +46,7 @@ export function generateAutoMatchSuggestions(
   
   for (const reference of sortedReferences) {
     // Get search results for this reference
-    const searchResults = searchMatches(
+    const searchResults = SearchIndex(
       reference.description,
       unusedFilePaths.filter(path => !suggestedPaths.has(path)), // Avoid duplicate suggestions
       new Set() // Empty set since we already filtered unusedFilePaths

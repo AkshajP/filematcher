@@ -1,11 +1,33 @@
-// lib/fuzzy-matcher.ts - Core Matching Algorithm
+// lib/fuzzy-matcher.ts - Optimized Core Matching Algorithm
 
 import { SearchResult } from './types';
 
 /**
- * Calculates a similarity score between two strings based on word and character overlap.
+ * A higher-order function to memoize the results of another function.
+ * Caches results in memory to avoid re-computing for the same inputs.
+ * @param fn The function to memoize.
  */
-export function calculateSimilarity(string1: string, string2: string): number {
+function memoize<T extends (...args: any[]) => any>(fn: T): T {
+  const cache = new Map<string, ReturnType<T>>();
+  
+  return ((...args: Parameters<T>): ReturnType<T> => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) {
+      return cache.get(key)!;
+    }
+    
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  }) as T;
+}
+
+
+/**
+ * Calculates a similarity score between two strings.
+ * This function is memoized to cache results for performance.
+ */
+export const calculateSimilarity = memoize((string1: string, string2: string): number => {
   if (!string1 || !string2) return 0;
   
   const str1 = string1.toLowerCase();
@@ -44,10 +66,12 @@ export function calculateSimilarity(string1: string, string2: string): number {
   
   const charScore = charMatches / Math.max(str1.length, str2.length);
   return (wordScore * 0.7) + (charScore * 0.3);
-}
+});
+
 
 /**
- * Calculates a fuzzy match score, intelligently weighting file name vs. folder path.
+ * The rest of the functions from the original file remain unchanged as their logic is sound.
+ * calculateFuzzyScore, cleanFileName, and extractKeyTerms are used by the new SearchIndex class.
  */
 export function calculateFuzzyScore(filePath: string, searchTerm: string): number {
   if (!searchTerm.trim()) return 0;
@@ -84,9 +108,7 @@ export function calculateFuzzyScore(filePath: string, searchTerm: string): numbe
   return Math.max(fileNameScore * 0.8 + bestFolderScore * 0.3, bestFolderScore * 0.8);
 }
 
-/**
- * Cleans and normalizes strings by removing extensions, prefixes, dates, etc.
- */
+
 export function cleanFileName(text: string): string {
   if (!text) return "";
   
@@ -101,9 +123,7 @@ export function cleanFileName(text: string): string {
     .toLowerCase();
 }
 
-/**
- * Extracts key identifying terms (like codes, numbers) from a string.
- */
+
 export function extractKeyTerms(text: string): string {
   if (!text) return "";
   const keyTermRegex = /([A-Z]+-?\d+-\d+)|([A-Z]+-?\d+)|(\d{3,})/g;
@@ -111,33 +131,90 @@ export function extractKeyTerms(text: string): string {
   return matches ? matches.join(' ') : cleanFileName(text);
 }
 
+
 /**
- * The application's core search function.
+ * A highly optimized search index that pre-processes file paths
+ * to enable near-instantaneous fuzzy searching.
  */
-export function searchMatches(searchTerm: string, filePaths: string[], usedFilePaths: Set<string>): SearchResult[] {
-  const cleanedSearchTerm = cleanFileName(searchTerm);
-  const keyTermsSearch = extractKeyTerms(searchTerm);
-  const availableFilePaths = filePaths.filter(path => !usedFilePaths.has(path));
-  
-  if (!searchTerm.trim()) {
-    return availableFilePaths.map(path => ({ path, score: 0 }));
+export class SearchIndex {
+  private allFilePaths: string[];
+  private searchIndex: Map<string, Set<string>>;
+
+  constructor(filePaths: string[]) {
+    this.allFilePaths = filePaths;
+    this.searchIndex = this.buildIndex(filePaths);
+  }
+
+  /**
+   * Builds an inverted index from file paths to tokens.
+   * This is the one-time cost that makes searches fast.
+   */
+  private buildIndex(filePaths: string[]): Map<string, Set<string>> {
+    const index = new Map<string, Set<string>>();
+    for (const path of filePaths) {
+      // Create a comprehensive set of tokens from the path
+      const pathTokens = cleanFileName(path.replace(/\//g, ' ')).split(' ');
+      const keyTermTokens = extractKeyTerms(path).toLowerCase().split(' ');
+      const allTokens = new Set([...pathTokens, ...keyTermTokens].filter(t => t.length > 1));
+
+      for (const token of allTokens) {
+        if (!index.has(token)) {
+          index.set(token, new Set());
+        }
+        index.get(token)!.add(path);
+      }
+    }
+    return index;
   }
   
-  const matches = availableFilePaths.map(filePath => {
-    const pathParts = filePath.split('/');
-    const fileName = pathParts[pathParts.length - 1];
-    const cleanedFileName = cleanFileName(fileName);
+  /**
+   * The application's core search function, now highly optimized.
+   */
+  public search(searchTerm: string, usedFilePaths: Set<string>): SearchResult[] {
+    const availableFilePaths = this.allFilePaths.filter(path => !usedFilePaths.has(path));
     
-    const originalScore = calculateFuzzyScore(filePath, searchTerm);
-    const cleanedScore = calculateFuzzyScore(cleanedFileName, cleanedSearchTerm);
-    const keyTermsScore = calculateFuzzyScore(filePath, keyTermsSearch);
+    if (!searchTerm.trim()) {
+      return availableFilePaths.map(path => ({ path, score: 0 }));
+    }
     
-    return {
-      path: filePath,
-      score: Math.max(originalScore, cleanedScore, keyTermsScore)
-    };
-  }).filter(item => item.score > 0.05);
-  
-  matches.sort((a, b) => b.score - a.score);
-  return matches.slice(0, 50); // Return top 50 for performance
+    // 1. Get a small list of candidate paths from the index
+    const cleanedSearchTerm = cleanFileName(searchTerm);
+    const keyTermsSearch = extractKeyTerms(searchTerm);
+    const searchTokens = new Set([
+        ...cleanedSearchTerm.split(' '),
+        ...keyTermsSearch.toLowerCase().split(' ')
+    ].filter(t => t.length > 1));
+    
+    const candidatePaths = new Set<string>();
+    for (const token of searchTokens) {
+        // Find all index keys that contain the search token for fuzzy matching
+        for (const [indexKey, paths] of this.searchIndex.entries()) {
+            if(indexKey.includes(token)) {
+                paths.forEach(path => candidatePaths.add(path));
+            }
+        }
+    }
+
+    // 2. Run scoring only on the candidates (and filter out used paths)
+    const matches = Array.from(candidatePaths)
+      .filter(path => !usedFilePaths.has(path))
+      .map(filePath => {
+        const pathParts = filePath.split('/');
+        const fileName = pathParts[pathParts.length - 1];
+        const cleanedFileName = cleanFileName(fileName);
+        
+        const originalScore = calculateFuzzyScore(filePath, searchTerm);
+        const cleanedScore = calculateFuzzyScore(cleanedFileName, cleanedSearchTerm);
+        const keyTermsScore = calculateFuzzyScore(filePath, keyTermsSearch);
+        
+        return {
+          path: filePath,
+          score: Math.max(originalScore, cleanedScore, keyTermsScore)
+        };
+      })
+      .filter(item => item.score > 0.05);
+      
+    matches.sort((a, b) => b.score - a.score);
+    return matches.slice(0, 50); // Return top 50 for performance
+  }
 }
