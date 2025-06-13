@@ -11,6 +11,9 @@ SLOW
 horizontally not visible refs
 change id, doc descriptions can be same also
 
+To implement - virtualised loading for references
+
+Handle space characters at the end of search bar
 
 Error: Unknown message type: GENERATE_AUTO_MATCH
 
@@ -24,3 +27,13 @@ workers/worker-manager.ts (61:28) @ worker.onmessage
   62 |             this.pendingRequests.delete(id);
   63 |           }
   64 |           return;
+
+
+imported a session:
+
+  Each child in a list should have a unique "key" prop.
+
+Check the render method of `ScrollAreaViewport`. It was passed a child from FileReferences. See https://react.dev/link/warning-keys for more information.
+
+
+on submission, same name descriptions also get removed from references
