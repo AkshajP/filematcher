@@ -1,7 +1,7 @@
-// hooks/use-matcher.ts - Main Matcher Hook
+// hooks/use-matcher.ts - Main Matcher Hook with Worker Support
 
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { SearchIndex } from "@/lib/fuzzy-matcher";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { getWorkerManager } from "@/workers/worker-manager";
 import { loadDataSources, createDataFromFolder } from "@/lib/data-loader";
 import { SearchResult } from "@/lib/types";
 import { useMatcher } from "@/context/matcher-context";
@@ -14,12 +14,41 @@ export function useMatcherLogic() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [isProcessingFolder, setIsProcessingFolder] = useState(false);
+  const [isWorkerReady, setIsWorkerReady] = useState(false);
+  
+  // Worker manager reference
+  const workerManagerRef = useRef(getWorkerManager());
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
 
   useEffect(() => {
     // Only set loading to false, don't auto-load data
     // Data should only be loaded via explicit import actions
     setIsLoading(false);
   }, []);
+
+  // Initialize worker when file paths change
+  useEffect(() => {
+    const initializeWorker = async () => {
+      const filePaths = matcher.filePaths || [];
+      if (filePaths.length > 0) {
+        try {
+          setIsLoading(true);
+          await workerManagerRef.current.initializeSearch(filePaths);
+          setIsWorkerReady(true);
+          console.log(`Worker initialized with ${filePaths.length} file paths`);
+        } catch (error) {
+          console.warn('Worker initialization failed, using fallback:', error);
+          setIsWorkerReady(false);
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        setIsWorkerReady(false);
+      }
+    };
+
+    initializeWorker();
+  }, [matcher.filePaths]);
 
   // Add this new function for explicit data loading
   const loadFallbackData = useCallback(async () => {
@@ -34,53 +63,70 @@ export function useMatcherLogic() {
     }
   }, [matcher]);
 
-  // Create search index when file paths change
-  const searchIndex = useMemo(() => {
+  // Debounced search function using worker
+  const performSearch = useCallback(async (term: string, usedPaths: Set<string>) => {
     const filePaths = matcher.filePaths || [];
-    if (filePaths.length > 0) {
-      return new SearchIndex(filePaths);
-    }
-    return null;
-  }, [matcher.filePaths]);
-
-  // Perform search when search term, current reference, or search index changes
-  useEffect(() => {
-    const filePaths = matcher.filePaths || [];
-    const usedFilePaths = matcher.usedFilePaths || new Set();
     
-    // If no file paths are loaded, show empty results
-    if (filePaths.length === 0 || !searchIndex) {
+    if (filePaths.length === 0) {
       setSearchResults([]);
       setIsSearching(false);
       return;
     }
 
-    // Trim search term to handle trailing spaces
-    const trimmedSearchTerm = searchTerm.trim();
+    const trimmedTerm = term.trim();
 
     // If no current reference and no meaningful search term, show all available files
-    if (!matcher.currentReference && !trimmedSearchTerm) {
+    if (!matcher.currentReference && !trimmedTerm) {
       const allFiles = filePaths
-        .filter(path => !usedFilePaths.has(path))
+        .filter(path => !usedPaths.has(path))
         .map(path => ({ path, score: 0 }));
       setSearchResults(allFiles);
       setIsSearching(false);
       return;
     }
 
-    setIsSearching(true);
+    try {
+      setIsSearching(true);
+      
+      // Use trimmed search term or current reference description
+      const searchQuery = trimmedTerm || matcher.currentReference?.description || "";
+      
+      const results = await workerManagerRef.current.search(searchQuery, usedPaths);
+      setSearchResults(results);
+      
+    } catch (error) {
+      console.error('Search failed:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [matcher.currentReference?.description, matcher.filePaths]);
 
-    // Use trimmed search term or current reference description
-    const term = trimmedSearchTerm || matcher.currentReference?.description || "";
-    const results = searchIndex.search(term, usedFilePaths);
-    setSearchResults(results);
-    setIsSearching(false);
+  // Perform search when search term, current reference, or paths change
+  useEffect(() => {
+    // Clear any pending search
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    const usedFilePaths = matcher.usedFilePaths || new Set();
+    
+    // Debounce search for better performance
+    searchTimeoutRef.current = setTimeout(() => {
+      performSearch(searchTerm, usedFilePaths);
+    }, 150); // 150ms debounce
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
   }, [
     searchTerm,
     matcher.currentReference?.description,
     matcher.filePaths,
     matcher.usedFilePaths,
-    searchIndex,
+    performSearch,
   ]);
 
   // Auto-select first reference when available (only if we have references)
@@ -165,6 +211,42 @@ export function useMatcherLogic() {
     return csvContent;
   }, [matcher.matchedPairs, matcher.filePaths, matcher.sessionId]);
 
+  // Worker-powered auto-match function
+  const generateAutoMatch = useCallback(async (onProgress?: (data: any) => void) => {
+    try {
+      const result = await workerManagerRef.current.generateAutoMatch(
+        matcher.unmatchedReferences,
+        matcher.filePaths,
+        matcher.usedFilePaths,
+        onProgress
+      );
+      return result;
+    } catch (error) {
+      console.error('Auto-match generation failed:', error);
+      throw error;
+    }
+  }, [matcher.unmatchedReferences, matcher.filePaths, matcher.usedFilePaths]);
+
+  // Update search index when file paths change
+  const updateSearchIndex = useCallback(async (newFilePaths: string[]) => {
+    try {
+      await workerManagerRef.current.updateSearchIndex(newFilePaths);
+      setIsWorkerReady(true);
+    } catch (error) {
+      console.warn('Failed to update search index:', error);
+      setIsWorkerReady(false);
+    }
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return {
     // State
     matcher,
@@ -174,6 +256,7 @@ export function useMatcherLogic() {
     isLoading,
     isSearching,
     isProcessingFolder,
+    isWorkerReady,
     stats,
     bulkValidation,
 
@@ -181,5 +264,10 @@ export function useMatcherLogic() {
     handleResultSelect,
     exportMappings,
     loadFallbackData,
+    generateAutoMatch,
+    updateSearchIndex,
+    
+    // Worker status
+    workerStatus: workerManagerRef.current.getStatus(),
   };
 }
