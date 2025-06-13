@@ -22,7 +22,6 @@ function memoize<T extends (...args: any[]) => any>(fn: T): T {
   }) as T;
 }
 
-
 /**
  * Calculates a similarity score between two strings.
  * This function is memoized to cache results for performance.
@@ -68,11 +67,6 @@ export const calculateSimilarity = memoize((string1: string, string2: string): n
   return (wordScore * 0.7) + (charScore * 0.3);
 });
 
-
-/**
- * The rest of the functions from the original file remain unchanged as their logic is sound.
- * calculateFuzzyScore, cleanFileName, and extractKeyTerms are used by the new SearchIndex class.
- */
 export function calculateFuzzyScore(filePath: string, searchTerm: string): number {
   if (!searchTerm.trim()) return 0;
   
@@ -108,7 +102,6 @@ export function calculateFuzzyScore(filePath: string, searchTerm: string): numbe
   return Math.max(fileNameScore * 0.8 + bestFolderScore * 0.3, bestFolderScore * 0.8);
 }
 
-
 export function cleanFileName(text: string): string {
   if (!text) return "";
   
@@ -123,7 +116,6 @@ export function cleanFileName(text: string): string {
     .toLowerCase();
 }
 
-
 export function extractKeyTerms(text: string): string {
   if (!text) return "";
   const keyTermRegex = /([A-Z]+-?\d+-\d+)|([A-Z]+-?\d+)|(\d{3,})/g;
@@ -131,10 +123,9 @@ export function extractKeyTerms(text: string): string {
   return matches ? matches.join(' ') : cleanFileName(text);
 }
 
-
 /**
  * A highly optimized search index that pre-processes file paths
- * to enable near-instantaneous fuzzy searching.
+ * to enable near-instantaneous fuzzy searching with regex pattern support.
  */
 export class SearchIndex {
   private allFilePaths: string[];
@@ -166,20 +157,173 @@ export class SearchIndex {
     }
     return index;
   }
-  
+
   /**
-   * The application's core search function, now highly optimized.
+   * Detects if search term contains regex patterns
+   */
+  private hasRegexPattern(searchTerm: string): boolean {
+    return /[*?+\[\](){}|\\^$]/.test(searchTerm);
+  }
+
+  /**
+   * Converts user-friendly patterns to regex
+   * Examples: "Order No. *" -> /Order No\. (.+)/i
+   */
+  private createRegexFromPattern(pattern: string): RegExp {
+    // Escape special regex characters except our wildcards
+    let regexPattern = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape special chars
+      .replace(/\\\*/g, '(.*)') // Convert * to capture group
+      .replace(/\\\?/g, '(.)'); // Convert ? to single char capture
+
+    return new RegExp(regexPattern, 'i');
+  }
+
+  /**
+   * Extracts sortable values from file paths using regex captures
+   */
+  private extractSortableValue(filePath: string, regex: RegExp): { value: string; sortKey: number | string } {
+    const fileName = filePath.split('/').pop() || filePath;
+    const match = fileName.match(regex);
+    
+    if (!match || !match[1]) {
+      return { value: fileName, sortKey: fileName };
+    }
+
+    const capturedValue = match[1];
+    
+    // Try to extract numbers for numerical sorting
+    const numberMatch = capturedValue.match(/(\d+)/);
+    if (numberMatch) {
+      return { 
+        value: capturedValue, 
+        sortKey: parseInt(numberMatch[1], 10) 
+      };
+    }
+
+    // Fall back to string sorting
+    return { value: capturedValue, sortKey: capturedValue };
+  }
+
+  /**
+   * Applies regex filtering and sorting to search results
+   */
+  private applyRegexSorting(results: SearchResult[], pattern: string): SearchResult[] {
+    const regex = this.createRegexFromPattern(pattern);
+    
+    // Filter results that match the regex pattern
+    const regexMatches = results.filter(result => {
+      const fileName = result.path.split('/').pop() || result.path;
+      return regex.test(fileName);
+    });
+
+    // If no regex matches, return original results
+    if (regexMatches.length === 0) {
+      return results;
+    }
+
+    // Extract sortable values and sort
+    const withSortKeys = regexMatches.map(result => ({
+      ...result,
+      sortData: this.extractSortableValue(result.path, regex)
+    }));
+
+    // Sort by the extracted values (numerical if possible, otherwise alphabetical)
+    withSortKeys.sort((a, b) => {
+      const aKey = a.sortData.sortKey;
+      const bKey = b.sortData.sortKey;
+
+      // Both are numbers - sort numerically
+      if (typeof aKey === 'number' && typeof bKey === 'number') {
+        return aKey - bKey;
+      }
+
+      // Both are strings - sort alphabetically
+      if (typeof aKey === 'string' && typeof bKey === 'string') {
+        return aKey.localeCompare(bKey);
+      }
+
+      // Mixed types - numbers first, then strings
+      if (typeof aKey === 'number') return -1;
+      if (typeof bKey === 'number') return 1;
+
+      return 0;
+    });
+
+    // Return sorted results without the temporary sort data
+    return withSortKeys.map(({ sortData, ...result }) => result);
+  }
+
+  /**
+   * The application's core search function with regex pattern support.
    */
   public search(searchTerm: string, usedFilePaths: Set<string>): SearchResult[] {
     const availableFilePaths = this.allFilePaths.filter(path => !usedFilePaths.has(path));
     
-    if (!searchTerm.trim()) {
+    // Trim the search term to handle spaces properly
+    const trimmedSearchTerm = searchTerm.trim();
+    
+    if (!trimmedSearchTerm) {
       return availableFilePaths.map(path => ({ path, score: 0 }));
     }
+
+    // Check if this is a regex pattern search
+    const isRegexPattern = this.hasRegexPattern(trimmedSearchTerm);
     
-    // 1. Get a small list of candidate paths from the index
-    const cleanedSearchTerm = cleanFileName(searchTerm);
-    const keyTermsSearch = extractKeyTerms(searchTerm);
+    if (isRegexPattern) {
+      // For regex patterns, first do a broad fuzzy search to get candidates
+      const basePattern = trimmedSearchTerm.replace(/[*?+\[\](){}|\\^$]/g, ''); // Remove regex chars for fuzzy search
+      const cleanedSearchTerm = cleanFileName(basePattern);
+      const keyTermsSearch = extractKeyTerms(basePattern);
+      
+      if (cleanedSearchTerm.trim() || keyTermsSearch.trim()) {
+        // Get fuzzy search candidates first
+        const searchTokens = new Set([
+          ...cleanedSearchTerm.split(' '),
+          ...keyTermsSearch.toLowerCase().split(' ')
+        ].filter(t => t.length > 1));
+        
+        const candidatePaths = new Set<string>();
+        for (const token of searchTokens) {
+          for (const [indexKey, paths] of this.searchIndex.entries()) {
+            if (indexKey.includes(token)) {
+              paths.forEach(path => candidatePaths.add(path));
+            }
+          }
+        }
+
+        const fuzzyMatches = Array.from(candidatePaths)
+          .filter(path => !usedFilePaths.has(path))
+          .map(filePath => {
+            const pathParts = filePath.split('/');
+            const fileName = pathParts[pathParts.length - 1];
+            const cleanedFileName = cleanFileName(fileName);
+            
+            const originalScore = calculateFuzzyScore(filePath, basePattern);
+            const cleanedScore = calculateFuzzyScore(cleanedFileName, cleanedSearchTerm);
+            const keyTermsScore = calculateFuzzyScore(filePath, keyTermsSearch);
+            
+            return {
+              path: filePath,
+              score: Math.max(originalScore, cleanedScore, keyTermsScore)
+            };
+          })
+          .filter(item => item.score > 0.05)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 100); // Get more candidates for regex filtering
+
+        // Apply regex sorting using the trimmed search term
+        return this.applyRegexSorting(fuzzyMatches, trimmedSearchTerm);
+      } else {
+        // Pure regex pattern without base text - search all files
+        const allResults = availableFilePaths.map(path => ({ path, score: 0.5 }));
+        return this.applyRegexSorting(allResults, trimmedSearchTerm);
+      }
+    }
+
+    // Regular fuzzy search (existing logic)
+    const cleanedSearchTerm = cleanFileName(trimmedSearchTerm);
+    const keyTermsSearch = extractKeyTerms(trimmedSearchTerm);
     const searchTokens = new Set([
         ...cleanedSearchTerm.split(' '),
         ...keyTermsSearch.toLowerCase().split(' ')
@@ -187,7 +331,6 @@ export class SearchIndex {
     
     const candidatePaths = new Set<string>();
     for (const token of searchTokens) {
-        // Find all index keys that contain the search token for fuzzy matching
         for (const [indexKey, paths] of this.searchIndex.entries()) {
             if(indexKey.includes(token)) {
                 paths.forEach(path => candidatePaths.add(path));
@@ -195,7 +338,6 @@ export class SearchIndex {
         }
     }
 
-    // 2. Run scoring only on the candidates (and filter out used paths)
     const matches = Array.from(candidatePaths)
       .filter(path => !usedFilePaths.has(path))
       .map(filePath => {
@@ -203,7 +345,7 @@ export class SearchIndex {
         const fileName = pathParts[pathParts.length - 1];
         const cleanedFileName = cleanFileName(fileName);
         
-        const originalScore = calculateFuzzyScore(filePath, searchTerm);
+        const originalScore = calculateFuzzyScore(filePath, trimmedSearchTerm);
         const cleanedScore = calculateFuzzyScore(cleanedFileName, cleanedSearchTerm);
         const keyTermsScore = calculateFuzzyScore(filePath, keyTermsSearch);
         
@@ -215,7 +357,7 @@ export class SearchIndex {
       .filter(item => item.score > 0.05);
       
     matches.sort((a, b) => b.score - a.score);
-    return matches.slice(0, 50); // Return top 50 for performance
+    return matches.slice(0, 50);
   }
 }
 

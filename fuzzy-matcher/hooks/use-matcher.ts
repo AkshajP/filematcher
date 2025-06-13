@@ -55,8 +55,11 @@ export function useMatcherLogic() {
       return;
     }
 
-    // If no current reference and no search term, show all available files
-    if (!matcher.currentReference && !searchTerm.trim()) {
+    // Trim search term to handle trailing spaces
+    const trimmedSearchTerm = searchTerm.trim();
+
+    // If no current reference and no meaningful search term, show all available files
+    if (!matcher.currentReference && !trimmedSearchTerm) {
       const allFiles = filePaths
         .filter(path => !usedFilePaths.has(path))
         .map(path => ({ path, score: 0 }));
@@ -67,8 +70,8 @@ export function useMatcherLogic() {
 
     setIsSearching(true);
 
-    // No additional debouncing needed - already handled in SearchResults component
-    const term = searchTerm || matcher.currentReference?.description || "";
+    // Use trimmed search term or current reference description
+    const term = trimmedSearchTerm || matcher.currentReference?.description || "";
     const results = searchIndex.search(term, usedFilePaths);
     setSearchResults(results);
     setIsSearching(false);
