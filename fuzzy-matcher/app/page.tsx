@@ -1,4 +1,4 @@
-// app/page.tsx - Main Page Component with Workflow Integration
+// app/page.tsx - Main Page Component with Worker Integration
 
 'use client';
 
@@ -13,10 +13,9 @@ import { useMatcherLogic } from '@/hooks/use-matcher';
 import { loadFromFolder } from '@/lib/data-loader';
 import { importReferencesFromFile, downloadReferenceTemplate } from '@/lib/reference-loader';
 import { parseExportedCSV, validateImportedMappings, applyImportedMappings, ImportValidationResult, ImportOptions, validateImportedMappingsAgainstCurrentState } from '@/lib/import-manager';
-import { generateAutoMatchSuggestions, AutoMatchResult, AutoMatchSuggestion } from '@/lib/auto-matcher';
-import { SearchIndex } from '@/lib/fuzzy-matcher'; // New Import
+import { AutoMatchResult, AutoMatchSuggestion } from '@/lib/auto-matcher';
 import { MatchedPair } from '@/lib/types';
-import { useState, useEffect, useMemo } from 'react'; // New Import: useMemo
+import { useState, useEffect } from 'react';
 
 type WorkflowMode = 'setup' | 'working';
 
@@ -25,37 +24,18 @@ export default function HomePage() {
     matcher,
     searchTerm,
     setSearchTerm,
-    searchResults: initialSearchResults, // Keep initial results for reference if needed
+    searchResults,
     isLoading,
     isSearching,
+    isWorkerReady,
     stats,
     bulkValidation,
     handleResultSelect,
     exportMappings,
+    generateAutoMatch,
+    updateSearchIndex,
+    workerStatus,
   } = useMatcherLogic();
-
-  // 1. Create the search index only when file paths change
-  const searchIndex = useMemo(() => {
-    if (matcher.filePaths.length > 0) {
-      return new SearchIndex(matcher.filePaths);
-    }
-    return null;
-  }, [matcher.filePaths]);
-
-  // 2. Manage search results locally using the new index
-  const [searchResults, setSearchResults] = useState(initialSearchResults);
-
-  // Effect to run search whenever the term or index changes
-  useEffect(() => {
-    if (searchIndex) {
-      // isSearching is still useful for debouncing visual feedback
-      const results = searchIndex.search(searchTerm, matcher.usedFilePaths);
-      setSearchResults(results);
-    } else {
-      setSearchResults([]);
-    }
-  }, [searchTerm, searchIndex, matcher.usedFilePaths]);
-
 
   // Workflow state management
   const [workflowMode, setWorkflowMode] = useState<WorkflowMode>('setup');
@@ -74,6 +54,8 @@ export default function HomePage() {
     isOpen: boolean;
     result?: AutoMatchResult;
     isProcessing?: boolean;
+    progress?: number;
+    currentItem?: string;
   }>({ isOpen: false });
 
   // Determine current workflow state
@@ -98,7 +80,6 @@ export default function HomePage() {
     }
   }, [bothLoaded, workflowMode]);
 
-
   const handleImportFolder = async (files: FileList) => {
     try {
       const result = await loadFromFolder(files);
@@ -115,6 +96,7 @@ export default function HomePage() {
         const validationResult = validateImportedMappings(mappings, filePaths, metadata);
         
         matcher.updateFilePathsOnly(filePaths);
+        await updateSearchIndex(filePaths);
         
         setImportDialog({
           isOpen: true,
@@ -124,6 +106,7 @@ export default function HomePage() {
         });
       } else {
         matcher.updateFilePathsOnly(filePaths);
+        await updateSearchIndex(filePaths);
         
         const currentReferences = matcher.fileReferences || [];
         if (currentReferences.length > 0) {
@@ -255,27 +238,47 @@ export default function HomePage() {
       return;
     }
 
+    if (!isWorkerReady) {
+      alert('Search worker is not ready. Please wait for initialization to complete.');
+      return;
+    }
+
     try {
-      console.log('Starting auto-match process...');
-      const result = generateAutoMatchSuggestions(
-        matcher.unmatchedReferences,
-        matcher.filePaths,
-        matcher.usedFilePaths
-      );
+      console.log('Starting worker-powered auto-match process...');
+      
+      setAutoMatchDialog({
+        isOpen: true,
+        isProcessing: true,
+        progress: 0
+      });
+
+      const result = await generateAutoMatch((progressData) => {
+        // Handle progress updates
+        if (progressData.type === 'AUTO_MATCH_PROGRESS') {
+          setAutoMatchDialog(prev => ({
+            ...prev,
+            progress: progressData.progress,
+            currentItem: progressData.currentReference
+          }));
+        }
+      });
 
       if (result.suggestions.filter(s => s.suggestedPath).length === 0) {
+        setAutoMatchDialog({ isOpen: false });
         alert('No suggestions could be generated. Try adjusting your file descriptions or check if files are already matched.');
         return;
       }
 
       setAutoMatchDialog({
         isOpen: true,
-        result
+        result,
+        isProcessing: false
       });
 
-      console.log(`Generated ${result.suggestions.length} auto match suggestions`);
+      console.log(`Generated ${result.suggestions.length} auto match suggestions using workers`);
     } catch (error) {
       console.error('Failed to generate auto match suggestions:', error);
+      setAutoMatchDialog({ isOpen: false });
       alert('Failed to generate suggestions. Please try again.');
     }
   };
@@ -341,7 +344,14 @@ export default function HomePage() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading file data...</p>
+          <p className="text-gray-600">
+            {isWorkerReady ? 'Initializing workers...' : 'Loading file data...'}
+          </p>
+          {workerStatus.searchWorkerActive && (
+            <p className="text-xs text-emerald-600 mt-2">
+              ⚡ Worker-powered search active
+            </p>
+          )}
         </div>
       </div>
     );
@@ -384,6 +394,26 @@ export default function HomePage() {
         unmappedCount={matcher.unmatchedReferences.length}
       />
       
+      {/* Worker Status Indicator */}
+      {workflowMode === 'working' && (
+        <div className="bg-blue-50 border-b border-blue-200 px-8 py-2">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-4">
+              <span className={`inline-flex items-center gap-1 ${workerStatus.searchWorkerActive ? 'text-green-700' : 'text-gray-600'}`}>
+                {workerStatus.searchWorkerActive ? '⚡' : '🔄'} 
+                Search: {workerStatus.searchWorkerActive ? 'Worker-powered' : 'Main thread'}
+              </span>
+              <span className={`${isWorkerReady ? 'text-green-700' : 'text-orange-600'}`}>
+                Index: {isWorkerReady ? 'Ready' : 'Initializing...'}
+              </span>
+            </div>
+            <div className="text-gray-500">
+              Performance mode: {workerStatus.searchWorkerActive ? 'Optimized' : 'Standard'}
+            </div>
+          </div>
+        </div>
+      )}
+      
       {importDialog.awaitingFolder && (
         <div className="bg-blue-50 border-b border-blue-200 px-8 py-3">
           <div className="text-blue-800 text-sm">
@@ -408,11 +438,11 @@ export default function HomePage() {
               onDetectRemaining={matcher.detectRemainingFiles}
             />
             
-            {/* Middle Panel - Search Results (Now uses index-based results) */}
+            {/* Middle Panel - Search Results (Worker-powered) */}
             <SearchResults 
               searchTerm={searchTerm}
-              onSearchTermChange={setSearchTerm} // This triggers the useEffect search
-              searchResults={searchResults} // Passed from local state
+              onSearchTermChange={setSearchTerm}
+              searchResults={searchResults}
               isSearching={isSearching}
               currentReference={matcher.currentReference}
               selectedResult={matcher.selectedResult}
@@ -445,13 +475,40 @@ export default function HomePage() {
         />
       )}
 
-      {autoMatchDialog.isOpen && autoMatchDialog.result && (
-        <AutoMatchDialog
-          autoMatchResult={autoMatchDialog.result}
-          onAccept={handleAutoMatchAccept}
-          onCancel={handleAutoMatchCancel}
-          isProcessing={autoMatchDialog.isProcessing}
-        />
+      {autoMatchDialog.isOpen && (
+        <>
+          {autoMatchDialog.isProcessing ? (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full mx-4">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
+                  <h3 className="text-lg font-semibold mb-2">Generating Auto-Match Suggestions</h3>
+                  <p className="text-gray-600 mb-4">Using worker-powered fuzzy matching...</p>
+                  {autoMatchDialog.progress !== undefined && (
+                    <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                      <div 
+                        className="bg-emerald-600 h-2 rounded-full transition-all duration-300" 
+                        style={{ width: `${autoMatchDialog.progress}%` }}
+                      ></div>
+                    </div>
+                  )}
+                  {autoMatchDialog.currentItem && (
+                    <p className="text-xs text-gray-500 truncate">
+                      Processing: {autoMatchDialog.currentItem}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : autoMatchDialog.result && (
+            <AutoMatchDialog
+              autoMatchResult={autoMatchDialog.result}
+              onAccept={handleAutoMatchAccept}
+              onCancel={handleAutoMatchCancel}
+              isProcessing={autoMatchDialog.isProcessing}
+            />
+          )}
+        </>
       )}
     </div>
   );

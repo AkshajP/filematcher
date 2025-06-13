@@ -10,3 +10,17 @@ erase work if user wants to restore previous session mid way (duplicates of matc
 SLOW
 horizontally not visible refs
 change id, doc descriptions can be same also
+
+
+Error: Unknown message type: GENERATE_AUTO_MATCH
+
+workers/worker-manager.ts (61:28) @ worker.onmessage
+
+
+  59 |           if (request) {
+  60 |             clearTimeout(request.timeout);
+> 61 |             request.reject(new Error(error || 'Worker error'));
+     |                            ^
+  62 |             this.pendingRequests.delete(id);
+  63 |           }
+  64 |           return;
