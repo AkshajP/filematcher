@@ -1,4 +1,4 @@
-// lib/worker-manager.ts - Production Worker Manager
+// workers/worker-manager.ts - Production Worker Manager with Static Worker Creation
 
 import { SearchResult, FileReference } from '../lib/types';
 import { SearchIndex } from '../lib/fuzzy-matcher'; // Fallback implementation
@@ -46,11 +46,18 @@ class WorkerCommunicator {
     if (this.isTerminated) return;
     
     try {
-      // Next.js 15.3.3 compatible worker creation
-      //this.worker = new Worker(new URL(this.workerScript, import.meta.url));
-      this.worker = new Worker(new URL('./search.worker.ts', import.meta.url), {
-  type: 'module',
-});
+      // Static worker creation based on script name
+      // Webpack requires static analysis, so we can't use dynamic paths
+      if (this.workerScript === './search.worker.ts') {
+        console.log('Creating search worker');
+        this.worker = new Worker(new URL('./search.worker.ts', import.meta.url));
+      } else if (this.workerScript === './auto-match.worker.ts') {
+        console.log('Creating auto-match worker');
+        this.worker = new Worker(new URL('./auto-match.worker.ts', import.meta.url));
+      } else {
+        throw new Error(`Unknown worker script: ${this.workerScript}. Available: ./search.worker.ts, ./auto-match.worker.ts`);
+      }
+      
       this.worker.onmessage = (e) => {
         const { type, id, data, error } = e.data;
         
@@ -64,21 +71,25 @@ class WorkerCommunicator {
           return;
         }
         
-        // Handle progress messages
-        if (type.includes('PROGRESS')) {
+        // Handle progress messages (these don't resolve requests)
+        if (type && type.includes('PROGRESS')) {
           // These are handled by specific listeners, not request-response
           return;
         }
         
-        const request = this.pendingRequests.get(id);
-        if (request) {
-          clearTimeout(request.timeout);
-          if (error) {
-            request.reject(new Error(error));
-          } else {
-            request.resolve(data);
+        // Handle completion messages (these resolve requests)
+        if (id && this.pendingRequests.has(id)) {
+          const request = this.pendingRequests.get(id);
+          if (request) {
+            clearTimeout(request.timeout);
+            if (error) {
+              request.reject(new Error(error));
+            } else {
+              // Resolve with data for any completion message type
+              request.resolve(data);
+            }
+            this.pendingRequests.delete(id);
           }
-          this.pendingRequests.delete(id);
         }
       };
       
@@ -331,7 +342,12 @@ export class AutoMatchWorkerManager {
   private workerComm: WorkerCommunicator | null = null;
   private progressCallback: ((data: any) => void) | null = null;
   
-  constructor(private options: WorkerPoolOptions = {}) {}
+  constructor(private options: WorkerPoolOptions = {}) {
+    this.options = {
+      enableFallback: true,
+      ...options
+    };
+  }
   
   async generateSuggestions(
     unmatchedReferences: FileReference[],
@@ -350,7 +366,7 @@ export class AutoMatchWorkerManager {
       throw new Error('Auto-match worker not available during SSR');
     }
     
-    // Create worker if needed
+    // Try worker first
     if (!this.workerComm) {
       try {
         this.workerComm = new WorkerCommunicator('./auto-match.worker.ts', this.options);
@@ -364,26 +380,139 @@ export class AutoMatchWorkerManager {
         
       } catch (error) {
         console.error('Failed to create auto-match worker:', error);
-        throw new Error('Auto-match worker creation failed');
+        // Don't throw here, fall back to main thread below
       }
     }
     
-    try {
-      const result = await this.workerComm.request({
-        type: 'GENERATE_AUTO_MATCH',
-        data: {
-          unmatchedReferences,
-          availableFilePaths,
-          usedFilePaths: Array.from(usedFilePaths)
-        }
-      }, 60000); // 60 second timeout for large datasets
-      
-      return result;
-      
-    } catch (error) {
-      console.error('Auto-match generation failed:', error);
-      throw error;
+    // Try worker if available
+    if (this.workerComm?.isWorkerAvailable) {
+      try {
+        const result = await this.workerComm.request({
+          type: 'GENERATE_AUTO_MATCH',
+          data: {
+            unmatchedReferences,
+            availableFilePaths,
+            usedFilePaths: Array.from(usedFilePaths)
+          }
+        }, 60000); // 60 second timeout for large datasets
+        
+        return result;
+        
+      } catch (error) {
+        console.warn('Worker auto-match failed, falling back to main thread:', error);
+      }
     }
+    
+    // Fallback to main thread implementation
+    if (this.options.enableFallback !== false) {
+      console.log('Using main thread fallback for auto-match');
+      return this.generateSuggestionsMainThread(
+        unmatchedReferences,
+        availableFilePaths,
+        usedFilePaths,
+        onProgress
+      );
+    }
+    
+    throw new Error('Auto-match worker unavailable and fallback disabled');
+  }
+  
+  /**
+   * Main thread fallback implementation
+   */
+  private generateSuggestionsMainThread(
+    unmatchedReferences: FileReference[],
+    availableFilePaths: string[],
+    usedFilePaths: Set<string>,
+    onProgress?: (data: any) => void
+  ): any {
+    // Import the SearchIndex here to avoid circular dependencies
+    const { SearchIndex } = require('../lib/fuzzy-matcher');
+    
+    const suggestions: any[] = [];
+    
+    // Filter out already used file paths
+    const unusedFilePaths = availableFilePaths.filter(path => !usedFilePaths.has(path));
+    
+    // Create search index for optimization
+    const searchIndex = new SearchIndex(unusedFilePaths);
+    
+    // Track which paths we've already suggested to avoid duplicates
+    const suggestedPaths = new Set<string>();
+    
+    // Sort references by complexity (more complex descriptions first)
+    const sortedReferences = [...unmatchedReferences].sort((a, b) => {
+      const aWords = a.description.split(/\s+/).length;
+      const bWords = b.description.split(/\s+/).length;
+      return bWords - aWords; // Descending order (more words first)
+    });
+    
+    const totalRefs = sortedReferences.length;
+    
+    for (let i = 0; i < sortedReferences.length; i++) {
+      const reference = sortedReferences[i];
+      
+      // Progress reporting for main thread
+      if (onProgress && (i % 10 === 0 || i === totalRefs - 1)) {
+        onProgress({
+          type: 'AUTO_MATCH_PROGRESS',
+          progress: ((i + 1) / totalRefs) * 100,
+          completed: i + 1,
+          total: totalRefs,
+          currentReference: reference.description.substring(0, 50) + '...'
+        });
+      }
+      
+      // Get search results for this reference using the optimized search index
+      const searchResults = searchIndex.search(
+        reference.description,
+        suggestedPaths // Pass already suggested paths as "used" to avoid duplicates
+      );
+      
+      // Take the best match if it exists and has a reasonable score
+      if (searchResults.length > 0 && searchResults[0].score > 0.15) {
+        const bestMatch = searchResults[0];
+        
+        suggestions.push({
+          reference,
+          suggestedPath: bestMatch.path,
+          score: bestMatch.score,
+          isSelected: false
+        });
+        
+        // Mark this path as suggested so we don't suggest it for another reference
+        suggestedPaths.add(bestMatch.path);
+      } else {
+        // No good suggestion found, add with empty path and 0 score
+        suggestions.push({
+          reference,
+          suggestedPath: '',
+          score: 0,
+          isSelected: false
+        });
+      }
+    }
+    
+    // Sort suggestions back to original order (by reference order)
+    suggestions.sort((a, b) => {
+      const aIndex = unmatchedReferences.findIndex(ref => ref.id === a.reference.id);
+      const bIndex = unmatchedReferences.findIndex(ref => ref.id === b.reference.id);
+      return aIndex - bIndex;
+    });
+    
+    // Calculate confidence levels
+    const withSuggestions = suggestions.filter(s => s.suggestedPath);
+    const highConfidence = withSuggestions.filter(s => s.score > 0.7).length;
+    const mediumConfidence = withSuggestions.filter(s => s.score >= 0.4 && s.score <= 0.7).length;
+    const lowConfidence = withSuggestions.filter(s => s.score > 0 && s.score < 0.4).length;
+    
+    return {
+      suggestions,
+      totalReferences: unmatchedReferences.length,
+      suggestionsWithHighConfidence: highConfidence,
+      suggestionsWithMediumConfidence: mediumConfidence,
+      suggestionsWithLowConfidence: lowConfidence
+    };
   }
   
   async terminate(): Promise<void> {
@@ -424,9 +553,9 @@ export class WorkerManager {
     onProgress?: (data: any) => void
   ): Promise<any> {
     return this.autoMatchManager.generateSuggestions(
-      unmatchedReferences,
-      availableFilePaths,
-      usedFilePaths,
+      unmatchedReferences, 
+      availableFilePaths, 
+      usedFilePaths, 
       onProgress
     );
   }
@@ -440,30 +569,30 @@ export class WorkerManager {
   
   getStatus() {
     return {
-      searchWorkerActive: this.searchManager.isUsingWorker,
-      pendingRequests: 0 // Could be expanded
+      search: {
+        isInitialized: this.searchManager['isInitialized'],
+        isUsingWorker: this.searchManager.isUsingWorker,
+      },
+      autoMatch: {
+        isActive: this.autoMatchManager['workerComm']?.isWorkerAvailable ?? false,
+      }
     };
   }
 }
 
-// Singleton instance for app-wide use
-let globalWorkerManager: WorkerManager | null = null;
+// Singleton instance
+let workerManagerInstance: WorkerManager | null = null;
 
 export function getWorkerManager(): WorkerManager {
-  if (!globalWorkerManager) {
-    globalWorkerManager = new WorkerManager({
-      enableFallback: true,
-      requestTimeout: 30000,
-      maxRetries: 3
-    });
+  if (!workerManagerInstance) {
+    workerManagerInstance = new WorkerManager();
   }
-  return globalWorkerManager;
+  return workerManagerInstance;
 }
 
-// Cleanup function for app termination
 export async function terminateAllWorkers(): Promise<void> {
-  if (globalWorkerManager) {
-    await globalWorkerManager.terminate();
-    globalWorkerManager = null;
+  if (workerManagerInstance) {
+    await workerManagerInstance.terminate();
+    workerManagerInstance = null;
   }
 }
