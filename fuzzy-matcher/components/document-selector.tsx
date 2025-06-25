@@ -1,4 +1,4 @@
-// components/document-selector.tsx
+// fuzzy-matcher/components/document-selector.tsx
 'use client'
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
@@ -60,11 +60,11 @@ const generateSampleData = (): DocumentFile[] => {
   return sampleFiles.map((file, index) => {
     const pathParts = file.path.split('/');
     const fileName = pathParts.pop() || '';
-    const filePath = pathParts.join('/');
+    const filePath = file.path;
 
     return {
       id: `doc-${index + 1}`,
-      filePath: file.path,
+      filePath: filePath,
       fileName,
       fileSize: file.size,
       dateModified: new Date(2024, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1).toISOString().split('T')[0],
@@ -133,15 +133,15 @@ export const DocumentSelectorGrid: React.FC = () => {
       flex: 2,
       cellRenderer: FilePathCellRenderer,
       filter: 'agTextColumnFilter',
-      filterParams: {
-        textMatcher: createDelimiterTextMatcher({
-          pathField: 'filePath',
-          fileNameField: 'fileName'
-        }),
-        filterOptions: ['contains', 'startsWith', 'endsWith'],
-        debounceMs: 500,
-        caseSensitive: false
-      } as ITextFilterParams,
+    //   filterParams: {
+    //     textMatcher: createDelimiterTextMatcher({
+    //       pathField: 'filePath',
+    //       fileNameField: 'fileName'
+    //     }),
+    //     filterOptions: ['contains', 'startsWith', 'endsWith'],
+    //     debounceMs: 500,
+    //     caseSensitive: false
+    //   } as ITextFilterParams,
       floatingFilter: true,
       floatingFilterComponentParams: {
         debounceMs: 500
@@ -236,6 +236,10 @@ export const DocumentSelectorGrid: React.FC = () => {
 
     console.log('Global search triggered with:', searchValue);
     
+    // Parse the search input to understand the search intent
+    const parsedInput = AGGridSearchParser.parseSearchInput(searchValue);
+    console.log('Parsed input:', parsedInput);
+    
     const filterModel = AGGridSearchParser.createFilterModel(searchValue, {
       pathField: 'filePath',
       fileNameField: 'fileName'
@@ -315,6 +319,12 @@ export const DocumentSelectorGrid: React.FC = () => {
     return AGGridSearchParser.getSearchHint(globalSearch);
   };
 
+  // Get parsed search info for debugging
+  const getParsedSearchInfo = () => {
+    if (!globalSearch.trim()) return null;
+    return AGGridSearchParser.parseSearchInput(globalSearch);
+  };
+
   return (
     <div className="w-full h-full flex flex-col bg-white">
       {/* Global Search Header */}
@@ -346,17 +356,25 @@ export const DocumentSelectorGrid: React.FC = () => {
         </div>
         
         {/* Search hint */}
-        <div className="text-xs text-gray-600">
+        <div className="text-xs text-gray-600 mb-1">
           {getSearchHint()}
         </div>
         
         {/* Debug info for development */}
         {globalSearch && (
-          <div className="text-xs text-purple-600 mt-1">
-            Debug: Applied filters - {JSON.stringify(AGGridSearchParser.createFilterModel(globalSearch, {
-              pathField: 'filePath',
-              fileNameField: 'fileName'
-            }))}
+          <div className="space-y-1">
+            <div className="text-xs text-purple-600">
+              Search Type: {getParsedSearchInfo()?.searchType || 'none'} 
+              {getParsedSearchInfo()?.pathQuery && ` | Path: "${getParsedSearchInfo()?.pathQuery}"`}
+              {getParsedSearchInfo()?.fileNameQuery && ` | Filename: "${getParsedSearchInfo()?.fileNameQuery}"`}
+              {getParsedSearchInfo()?.hasWildcard && ' | Has Wildcard'}
+            </div>
+            <div className="text-xs text-blue-600">
+              Applied Filters: {JSON.stringify(AGGridSearchParser.createFilterModel(globalSearch, {
+                pathField: 'filePath',
+                fileNameField: 'fileName'
+              }))}
+            </div>
           </div>
         )}
         
