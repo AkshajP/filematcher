@@ -1,4 +1,4 @@
-// lib/ag-grid-search-utils.ts
+// fuzzy-matcher/lib/ag-grid-search-utils.ts
 // Enhanced search parser for AG Grid integration with slash delimiter logic
 
 export interface ParsedSearchInput {
@@ -7,6 +7,7 @@ export interface ParsedSearchInput {
   hasWildcard: boolean;
   sortByFileName: boolean;
   originalInput: string;
+  searchType: 'path-only' | 'filename-only' | 'path-and-filename';
 }
 
 export interface ColumnMappings {
@@ -23,6 +24,7 @@ export class AGGridSearchParser {
    * Parse search input with "/" delimiter logic
    * Examples:
    * - "agreement" -> search filename only
+   * - "contracts/" -> search path contains "contracts" (path-only)
    * - "contracts/agreement" -> search path contains "contracts" AND filename contains "agreement"
    * - "exhibit *" -> search filename contains "exhibit" AND sort by filename
    * - "discovery/exhibit *" -> path contains "discovery" AND filename contains "exhibit" AND sort
@@ -34,13 +36,27 @@ export class AGGridSearchParser {
       return { 
         hasWildcard: false, 
         sortByFileName: false, 
-        originalInput 
+        originalInput,
+        searchType: 'filename-only'
       };
     }
 
     const hasWildcard = input.includes('*');
     const cleanInput = input.replace(/\*/g, '').trim();
 
+    // Check if it ends with "/" - this means path-only search
+    if (cleanInput.endsWith('/')) {
+      const pathPart = cleanInput.slice(0, -1).trim();
+      return {
+        pathQuery: pathPart || undefined,
+        hasWildcard,
+        sortByFileName: hasWildcard,
+        originalInput,
+        searchType: 'path-only'
+      };
+    }
+
+    // Check if it contains "/" in the middle - this means path AND filename search
     if (cleanInput.includes('/')) {
       const [pathPart, fileNamePart] = cleanInput.split('/', 2);
       return {
@@ -48,7 +64,8 @@ export class AGGridSearchParser {
         fileNameQuery: fileNamePart.trim() || undefined,
         hasWildcard,
         sortByFileName: hasWildcard,
-        originalInput
+        originalInput,
+        searchType: 'path-and-filename'
       };
     }
 
@@ -57,7 +74,8 @@ export class AGGridSearchParser {
       fileNameQuery: cleanInput,
       hasWildcard,
       sortByFileName: hasWildcard,
-      originalInput
+      originalInput,
+      searchType: 'filename-only'
     };
   }
 
@@ -71,15 +89,33 @@ export class AGGridSearchParser {
     const pathField = columnMappings?.pathField || 'filePath';
     const fileNameField = columnMappings?.fileNameField || 'fileName';
 
-    if (parsed.pathQuery) {
+    // For path-only searches, only add path filter
+    if (parsed.searchType === 'path-only' && parsed.pathQuery) {
       filterModel[pathField] = {
         filterType: 'text',
         type: 'contains',
         filter: parsed.pathQuery
       };
     }
-
-    if (parsed.fileNameQuery) {
+    // For path-and-filename searches, add both filters
+    else if (parsed.searchType === 'path-and-filename') {
+      if (parsed.pathQuery) {
+        filterModel[pathField] = {
+          filterType: 'text',
+          type: 'contains',
+          filter: parsed.pathQuery
+        };
+      }
+      if (parsed.fileNameQuery) {
+        filterModel[fileNameField] = {
+          filterType: 'text',
+          type: 'contains',
+          filter: parsed.fileNameQuery
+        };
+      }
+    }
+    // For filename-only searches, add filename filter
+    else if (parsed.searchType === 'filename-only' && parsed.fileNameQuery) {
       filterModel[fileNameField] = {
         filterType: 'text',
         type: 'contains',
@@ -116,16 +152,35 @@ export class AGGridSearchParser {
       fileName = parts[parts.length - 1] || '';
     }
     
-    // Check path match if specified
-    if (parsed.pathQuery) {
-      const pathMatch = filePath.toLowerCase().includes(parsed.pathQuery.toLowerCase());
-      if (!pathMatch) return false;
+    // For path-only searches
+    if (parsed.searchType === 'path-only') {
+      if (parsed.pathQuery) {
+        return filePath.toLowerCase().includes(parsed.pathQuery.toLowerCase());
+      }
+      return true; // Empty path query matches all
     }
     
-    // Check filename match if specified
-    if (parsed.fileNameQuery) {
-      const fileNameMatch = fileName.toLowerCase().includes(parsed.fileNameQuery.toLowerCase());
-      if (!fileNameMatch) return false;
+    // For path-and-filename searches
+    if (parsed.searchType === 'path-and-filename') {
+      let pathMatch = true;
+      let fileNameMatch = true;
+      
+      if (parsed.pathQuery) {
+        pathMatch = filePath.toLowerCase().includes(parsed.pathQuery.toLowerCase());
+      }
+      if (parsed.fileNameQuery) {
+        fileNameMatch = fileName.toLowerCase().includes(parsed.fileNameQuery.toLowerCase());
+      }
+      
+      return pathMatch && fileNameMatch;
+    }
+    
+    // For filename-only searches
+    if (parsed.searchType === 'filename-only') {
+      if (parsed.fileNameQuery) {
+        return fileName.toLowerCase().includes(parsed.fileNameQuery.toLowerCase());
+      }
+      return true; // Empty filename query matches all
     }
     
     return true;
@@ -136,18 +191,25 @@ export class AGGridSearchParser {
    */
   static getSearchHint(searchInput: string): string {
     if (!searchInput.trim()) {
-      return 'Type to search file names, use "/" for path/filename (e.g., "documents/agreement")';
+      return 'Type to search file names, use "/" for path/filename (e.g., "documents/agreement", "contracts/")';
     }
     
     const parsed = this.parseSearchInput(searchInput);
     const hints: string[] = [];
     
-    if (parsed.pathQuery) {
+    if (parsed.searchType === 'path-only') {
       hints.push(`Path contains "${parsed.pathQuery}"`);
-    }
-    if (parsed.fileNameQuery) {
+    } else if (parsed.searchType === 'path-and-filename') {
+      if (parsed.pathQuery) {
+        hints.push(`Path contains "${parsed.pathQuery}"`);
+      }
+      if (parsed.fileNameQuery) {
+        hints.push(`Filename contains "${parsed.fileNameQuery}"`);
+      }
+    } else if (parsed.searchType === 'filename-only') {
       hints.push(`Filename contains "${parsed.fileNameQuery}"`);
     }
+    
     if (parsed.sortByFileName) {
       hints.push('Sorted by filename');
     }
@@ -178,7 +240,11 @@ export class AGGridSearchParser {
       suggestions.push('Wildcard "*" will sort results by filename');
     }
     
-    if (input.includes('/') && !input.split('/')[1].trim()) {
+    if (input.endsWith('/')) {
+      suggestions.push('Trailing "/" searches path only - add filename after "/" for specific file search');
+    }
+    
+    if (input.includes('/') && !input.endsWith('/') && !input.split('/')[1].trim()) {
       suggestions.push('Add filename search after "/" for more specific results');
     }
     

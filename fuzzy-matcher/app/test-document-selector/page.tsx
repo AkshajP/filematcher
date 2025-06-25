@@ -1,4 +1,4 @@
-// app/test-document-selector/page.tsx
+// fuzzy-matcher/app/test-document-selector/page.tsx
 'use client'
 
 import React from 'react';
@@ -12,12 +12,22 @@ export default function TestDocumentSelectorPage() {
         
         <div className="bg-yellow-100 border border-yellow-400 rounded p-4 mb-6">
           <h2 className="font-semibold mb-2">Test Instructions:</h2>
+          <div className="text-sm space-y-1 mb-3">
+            <p><strong>Search Testing:</strong></p>
+            <p>• Try typing "contracts/" - should match files in contracts folder</p>
+            <p>• Try typing "agreement" - should match filenames containing "agreement"</p>
+            <p>• Try typing "contracts/agreement" - should match path AND filename</p>
+            <p>• Try typing "exhibit *" - should match and sort by filename</p>
+            <p>• Try typing "discovery/" - should match discovery folder files</p>
+          </div>
           <div className="text-sm space-y-1">
-            <p>• Try typing "agreement" in the global search</p>
-            <p>• Try typing "contracts/agreement" to test delimiter parsing</p>
-            <p>• Try typing "exhibit *" to test wildcard sorting</p>
-            <p>• Use individual column filters for granular searching</p>
-            <p>• Click "Advanced" to open the advanced filter builder</p>
+            <p><strong>Multi-Select Testing:</strong></p>
+            <p>• Click selection boxes to select files with order numbers</p>
+            <p>• Hold Ctrl+Click to multi-select individual files</p>
+            <p>• Hold Shift+Click to select ranges</p>
+            <p>• Use arrow keys to navigate, Space to toggle selection</p>
+            <p>• Shift+Arrow keys for keyboard range selection</p>
+            <p>• Esc to clear all selections, Ctrl+A to select all</p>
           </div>
         </div>
         
