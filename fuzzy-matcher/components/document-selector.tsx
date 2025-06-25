@@ -5,6 +5,7 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { AgGridReact } from 'ag-grid-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { Search, Settings } from 'lucide-react';
 
 // Import required AG Grid modules
@@ -18,7 +19,9 @@ import {
   ColDef, 
   GridReadyEvent, 
   GridApi, 
-  ITextFilterParams
+  ITextFilterParams,
+  CellClickedEvent,
+  RowClickedEvent
 } from 'ag-grid-community';
 
 // Import styles
@@ -34,9 +37,14 @@ interface DocumentFile {
   fileType?: string;
 }
 
-import { AGGridSearchParser, createDelimiterTextMatcher, createDelimiterFilterOptions } from '@/lib/ag-grid-search-utils';
+interface OrderedSelection {
+  item: DocumentFile;
+  order: number;
+}
 
-// Sample data generator
+import { AGGridSearchParser } from '@/lib/ag-grid-search-utils';
+
+// Sample data generator with stable, unique IDs
 const generateSampleData = (): DocumentFile[] => {
   const sampleFiles = [
     { path: '/contracts/legal/service-agreement-2024.pdf', type: 'pdf', size: 1024000 },
@@ -62,8 +70,19 @@ const generateSampleData = (): DocumentFile[] => {
     const fileName = pathParts.pop() || '';
     const filePath = file.path;
 
+    // Create stable, unique ID based on file path hash for consistency
+    const generateStableId = (path: string): string => {
+      let hash = 0;
+      for (let i = 0; i < path.length; i++) {
+        const char = path.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32-bit integer
+      }
+      return `doc-${Math.abs(hash)}-${index}`;
+    };
+
     return {
-      id: `doc-${index + 1}`,
+      id: generateStableId(filePath),
       filePath: filePath,
       fileName,
       fileSize: file.size,
@@ -71,6 +90,54 @@ const generateSampleData = (): DocumentFile[] => {
       fileType: file.type
     };
   });
+};
+
+// Custom Selection Cell Renderer with Order Numbers
+const SelectionCellRenderer = (props: any) => {
+  const { data, node, api } = props;
+  
+  if (!data) return null;
+  
+  // Get the current context from the grid API
+  const gridContext = api.getGridOption('context');
+  const { selectedFiles, cursorRowId, onToggleSelection } = gridContext || {};
+  
+  // Find if this item is selected
+  const selection = selectedFiles?.find((sel: OrderedSelection) => sel.item.id === data.id);
+  const isSelected = !!selection;
+  const isCursor = data.id === cursorRowId;
+  const orderNumber = selection?.order;
+  
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onToggleSelection) {
+      onToggleSelection(data, e);
+    }
+  };
+  
+  return (
+    <div 
+      className={`
+        flex items-center justify-center h-full w-full cursor-pointer relative
+        ${isCursor ? 'ring-2 ring-blue-400 ring-offset-1' : ''}
+        ${isSelected ? 'bg-emerald-50' : 'hover:bg-gray-50'}
+      `}
+      onClick={handleClick}
+    >
+      {/* Cursor indicator */}
+      {isCursor && (
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 rounded-l"></div>
+      )}
+      
+      {isSelected && orderNumber ? (
+        <div className="bg-emerald-700 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-2 border-emerald-800">
+          {orderNumber}
+        </div>
+      ) : (
+        <div className="w-4 h-4 border-2 border-gray-300 rounded hover:border-gray-400 transition-colors"></div>
+      )}
+    </div>
+  );
 };
 
 // Custom cell renderers
@@ -90,12 +157,23 @@ const FileSizeCellRenderer = (props: any) => {
 };
 
 const FilePathCellRenderer = (props: any) => {
-  const { value, data } = props;
+  const { value, data, api } = props;
+  
+  // Get the current context from the grid API
+  const gridContext = api.getGridOption('context');
+  const { cursorRowId } = gridContext || {};
+  
   const pathParts = value.split('/').filter((part: string) => part);
   const folders = pathParts.slice(0, -1);
+  const isCursor = data.id === cursorRowId;
   
   return (
-    <div className="flex flex-col">
+    <div className={`flex flex-col relative ${isCursor ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
+      {/* Cursor indicator */}
+      {isCursor && (
+        <div ></div>
+      )}
+      
       {folders.length > 0 && (
         <span className="text-xs text-gray-500">
           /{folders.join('/')}/
@@ -110,22 +188,295 @@ export const DocumentSelectorGrid: React.FC = () => {
   const gridRef = useRef<AgGridReact>(null);
   const [globalSearch, setGlobalSearch] = useState<string>('');
   const [gridApi, setGridApi] = useState<GridApi | null>(null);
-  const [selectedFiles, setSelectedFiles] = useState<DocumentFile[]>([]);
+  
+  // Ordered multi-select state
+  const [selectedFiles, setSelectedFiles] = useState<OrderedSelection[]>([]);
+  const [cursorRowId, setCursorRowId] = useState<string | null>(null);
+  const [rangeAnchor, setRangeAnchor] = useState<string | null>(null);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState<boolean>(false);
 
   // Sample data
   const rowData = useMemo(() => generateSampleData(), []);
 
+  // Update multi-select mode based on selections
+  useEffect(() => {
+    setIsMultiSelectMode(selectedFiles.length > 0);
+  }, [selectedFiles.length]);
+
+  // Selection management functions with robust duplicate prevention
+  const toggleSelection = useCallback((item: DocumentFile, event?: React.MouseEvent) => {
+    console.log('Toggle selection called for:', item.id, 'Current selections:', selectedFiles.length);
+    
+    const existingIndex = selectedFiles.findIndex(sel => sel.item.id === item.id);
+    
+    if (event?.ctrlKey || event?.metaKey) {
+      // Ctrl+Click: Toggle individual selection
+      if (existingIndex >= 0) {
+        // Remove existing selection
+        setSelectedFiles(prev => {
+          const newSelections = prev.filter((_, index) => index !== existingIndex);
+          console.log('Removing selection, new count:', newSelections.length);
+          return newSelections;
+        });
+      } else {
+        // Add new selection with next available order - ensure no duplicates
+        setSelectedFiles(prev => {
+          // Double-check for duplicates
+          const isDuplicate = prev.some(sel => sel.item.id === item.id);
+          if (isDuplicate) {
+            console.log('Duplicate selection prevented for:', item.id);
+            return prev;
+          }
+          
+          const usedOrders = new Set(prev.map(s => s.order));
+          let nextOrder = 1;
+          while (usedOrders.has(nextOrder)) {
+            nextOrder++;
+          }
+          const newSelections = [...prev, { item, order: nextOrder }];
+          console.log('Adding selection, new count:', newSelections.length);
+          return newSelections;
+        });
+      }
+      setCursorRowId(item.id);
+      setRangeAnchor(item.id);
+    } else if (event?.shiftKey && rangeAnchor) {
+      // Shift+Click: Range selection
+      handleRangeSelection(rangeAnchor, item.id);
+      setCursorRowId(item.id);
+    } else {
+      // Regular click: Single selection (exit multi-select mode)
+      if (isMultiSelectMode) {
+        // Clear multi-selections first
+        setSelectedFiles([]);
+      }
+      // Toggle single selection
+      if (existingIndex >= 0) {
+        setSelectedFiles([]);
+        console.log('Clearing single selection');
+      } else {
+        setSelectedFiles([{ item, order: 1 }]);
+        console.log('Setting single selection');
+      }
+      setCursorRowId(item.id);
+      setRangeAnchor(item.id);
+    }
+  }, [selectedFiles, rangeAnchor, isMultiSelectMode]);
+
+  // Range selection with chronological order based on selection sequence
+  const handleRangeSelection = useCallback((startId: string, endId: string) => {
+    if (!gridApi) return;
+    
+    // Get all displayed (filtered) row nodes
+    const allNodes: any[] = [];
+    gridApi.forEachNodeAfterFilterAndSort(node => {
+      allNodes.push(node);
+    });
+    
+    const startIndex = allNodes.findIndex(node => node.data.id === startId);
+    const endIndex = allNodes.findIndex(node => node.data.id === endId);
+    
+    if (startIndex === -1 || endIndex === -1) return;
+    
+    const selectionDirection = endIndex > startIndex ? 'down' : 'up';
+    const minIndex = Math.min(startIndex, endIndex);
+    const maxIndex = Math.max(startIndex, endIndex);
+    
+    // Create selection array based on chronological order of selection
+    const newSelections: OrderedSelection[] = [];
+    
+    if (selectionDirection === 'down') {
+      // Selecting downward: start gets 1, next gets 2, etc.
+      for (let i = minIndex; i <= maxIndex; i++) {
+        const orderNumber = (i - minIndex) + 1;
+        newSelections.push({
+          item: allNodes[i].data,
+          order: orderNumber
+        });
+      }
+    } else {
+      // Selecting upward: start gets 1, previous gets 2, etc.
+      for (let i = maxIndex; i >= minIndex; i--) {
+        const orderNumber = (maxIndex - i) + 1;
+        newSelections.push({
+          item: allNodes[i].data,
+          order: orderNumber
+        });
+      }
+    }
+    
+    setSelectedFiles(newSelections);
+    
+    console.log(`Range selection (${selectionDirection}):`, {
+      direction: selectionDirection,
+      startIndex,
+      endIndex,
+      chronologicalOrder: newSelections.map(s => ({
+        order: s.order,
+        fileName: s.item.fileName,
+        id: s.item.id.slice(-6)
+      }))
+    });
+  }, [gridApi]);
+
+  const selectAll = useCallback(() => {
+    if (!gridApi) return;
+    
+    const allItems: DocumentFile[] = [];
+    gridApi.forEachNodeAfterFilterAndSort(node => {
+      allItems.push(node.data);
+    });
+    
+    // Ensure no duplicates with Set-based deduplication
+    const uniqueItems = Array.from(
+      new Map(allItems.map(item => [item.id, item])).values()
+    );
+    
+    const newSelections = uniqueItems.map((item, index) => ({
+      item,
+      order: index + 1
+    }));
+    
+    setSelectedFiles(newSelections);
+    setRangeAnchor(uniqueItems[0]?.id || null);
+    
+    console.log('Select all:', uniqueItems.length, 'unique items');
+  }, [gridApi]);
+
+  const clearAllSelections = useCallback(() => {
+    setSelectedFiles([]);
+    setRangeAnchor(null);
+    console.log('Cleared all selections');
+  }, []);
+
+  // Fixed keyboard navigation with proper anchor handling
+  const handleKeyDown = useCallback((event: KeyboardEvent) => {
+    if (!gridApi || !cursorRowId) return;
+
+    // Get all displayed nodes
+    const allNodes: any[] = [];
+    gridApi.forEachNodeAfterFilterAndSort(node => {
+      allNodes.push(node);
+    });
+
+    const currentIndex = allNodes.findIndex(node => node.data.id === cursorRowId);
+    if (currentIndex === -1) return;
+
+    let handled = false;
+
+    switch (event.key) {
+      case 'ArrowDown':
+        if (event.shiftKey) {
+          // Shift+Down: Range selection downward
+          event.preventDefault();
+          if (currentIndex < allNodes.length - 1) {
+            const newCursorId = allNodes[currentIndex + 1].data.id;
+            
+            // Use current cursor as anchor if no anchor is set
+            const effectiveAnchor = rangeAnchor || cursorRowId;
+            
+            // Set anchor if this is the first range selection
+            if (!rangeAnchor) {
+              setRangeAnchor(cursorRowId);
+            }
+            
+            handleRangeSelection(effectiveAnchor, newCursorId);
+            setCursorRowId(newCursorId);
+          }
+        } else {
+          // Down: Move cursor
+          event.preventDefault();
+          if (currentIndex < allNodes.length - 1) {
+            setCursorRowId(allNodes[currentIndex + 1].data.id);
+            setRangeAnchor(null); // Clear anchor on navigation
+          }
+        }
+        handled = true;
+        break;
+
+      case 'ArrowUp':
+        if (event.shiftKey) {
+          // Shift+Up: Range selection upward
+          event.preventDefault();
+          if (currentIndex > 0) {
+            const newCursorId = allNodes[currentIndex - 1].data.id;
+            
+            // Use current cursor as anchor if no anchor is set
+            const effectiveAnchor = rangeAnchor || cursorRowId;
+            
+            // Set anchor if this is the first range selection
+            if (!rangeAnchor) {
+              setRangeAnchor(cursorRowId);
+            }
+            
+            handleRangeSelection(effectiveAnchor, newCursorId);
+            setCursorRowId(newCursorId);
+          }
+        } else {
+          // Up: Move cursor
+          event.preventDefault();
+          if (currentIndex > 0) {
+            setCursorRowId(allNodes[currentIndex - 1].data.id);
+            setRangeAnchor(null); // Clear anchor on navigation
+          }
+        }
+        handled = true;
+        break;
+
+      case ' ':
+        // Space: Toggle selection at cursor
+        event.preventDefault();
+        const currentItem = allNodes[currentIndex].data;
+        if (currentItem) {
+          toggleSelection(currentItem);
+          setRangeAnchor(cursorRowId);
+        }
+        handled = true;
+        break;
+
+      case 'Escape':
+        // Escape: Clear all selections
+        event.preventDefault();
+        if (isMultiSelectMode) {
+          clearAllSelections();
+          setRangeAnchor(null);
+        }
+        handled = true;
+        break;
+
+      case 'a':
+        if (event.ctrlKey || event.metaKey) {
+          // Ctrl+A: Select all
+          event.preventDefault();
+          selectAll();
+          setRangeAnchor(allNodes[0]?.data.id || null);
+          handled = true;
+        }
+        break;
+    }
+
+    if (handled) {
+      event.stopPropagation();
+    }
+  }, [cursorRowId, rangeAnchor, gridApi, isMultiSelectMode, toggleSelection, handleRangeSelection, selectAll, clearAllSelections]);
+
+  // Set up keyboard event listeners
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
   // Column definitions
   const columnDefs = useMemo<ColDef[]>(() => [
     {
-      headerName: 'Select',
+      headerName: '',
       field: 'select',
       width: 80,
-      checkboxSelection: true,
-      headerCheckboxSelection: true,
       pinned: 'left',
       sortable: false,
-      filter: false
+      filter: false,
+      cellRenderer: SelectionCellRenderer,
+      cellStyle: { padding: '0' }
     },
     {
       headerName: 'File',
@@ -133,15 +484,11 @@ export const DocumentSelectorGrid: React.FC = () => {
       flex: 2,
       cellRenderer: FilePathCellRenderer,
       filter: 'agTextColumnFilter',
-    //   filterParams: {
-    //     textMatcher: createDelimiterTextMatcher({
-    //       pathField: 'filePath',
-    //       fileNameField: 'fileName'
-    //     }),
-    //     filterOptions: ['contains', 'startsWith', 'endsWith'],
-    //     debounceMs: 500,
-    //     caseSensitive: false
-    //   } as ITextFilterParams,
+      filterParams: {
+        filterOptions: ['contains', 'startsWith', 'endsWith'],
+        debounceMs: 500,
+        caseSensitive: false
+      } as ITextFilterParams,
       floatingFilter: true,
       floatingFilterComponentParams: {
         debounceMs: 500
@@ -197,11 +544,10 @@ export const DocumentSelectorGrid: React.FC = () => {
     }
   ], []);
 
-  // Grid options
+  // Grid options with proper context management
   const gridOptions = useMemo(() => ({
-    rowSelection: 'multiple' as const,
-    suppressRowDeselection: false,
-    rowMultiSelectWithClick: true,
+    rowSelection: undefined, // Disable built-in selection
+    suppressRowClickSelection: true, // Prevent default row selection
     
     // Performance optimizations
     rowBuffer: 10,
@@ -222,23 +568,81 @@ export const DocumentSelectorGrid: React.FC = () => {
       sortable: true,
       resizable: true,
       filter: true
-    }
+    },
+
+    // Row ID for tracking - essential for proper selection management
+    getRowId: (params: any) => params.data.id,
+    
+    // Enable cell text selection
+    enableCellTextSelection: false
   }), []);
+
+  // Update grid context when selection state changes - with immediate refresh
+  useEffect(() => {
+    if (gridApi) {
+      const newContext = {
+        selectedFiles,
+        cursorRowId,
+        onToggleSelection: toggleSelection
+      };
+      
+      gridApi.setGridOption('context', newContext);
+      
+      // Force immediate refresh of the selection column
+      setTimeout(() => {
+        gridApi.refreshCells({
+          columns: ['select'],
+          force: true
+        });
+      }, 0);
+      
+      console.log('Updated grid context, selections:', selectedFiles.length);
+    }
+  }, [gridApi, selectedFiles, cursorRowId, toggleSelection]);
 
   // Handle grid ready
   const onGridReady = useCallback((params: GridReadyEvent) => {
     setGridApi(params.api);
-  }, []);
+    
+    // Set initial cursor and context
+    if (rowData.length > 0) {
+      setCursorRowId(rowData[0].id);
+    }
+    
+    // Set initial context
+    const initialContext = {
+      selectedFiles: [],
+      cursorRowId: rowData[0]?.id || null,
+      onToggleSelection: toggleSelection
+    };
+    
+    params.api.setGridOption('context', initialContext);
+    
+    console.log('Grid ready, initial context set');
+  }, [rowData, toggleSelection]);
+
+  // Handle cell clicks
+  const onCellClicked = useCallback((event: CellClickedEvent) => {
+    if (event.colDef.field === 'select') {
+      // Selection handled by cell renderer
+      return;
+    }
+    
+    // Set cursor to clicked row
+    setCursorRowId(event.data.id);
+    
+    // If not in multi-select mode, clear selections
+    if (!isMultiSelectMode && !event.event?.ctrlKey && !event.event?.metaKey && !event.event?.shiftKey) {
+      setSelectedFiles([]);
+      setRangeAnchor(null);
+    }
+  }, [isMultiSelectMode]);
 
   // Handle global search
   const handleGlobalSearch = useCallback((searchValue: string) => {
     if (!gridApi) return;
 
     console.log('Global search triggered with:', searchValue);
-    
-    // Parse the search input to understand the search intent
-    const parsedInput = AGGridSearchParser.parseSearchInput(searchValue);
-    console.log('Parsed input:', parsedInput);
     
     const filterModel = AGGridSearchParser.createFilterModel(searchValue, {
       pathField: 'filePath',
@@ -252,7 +656,7 @@ export const DocumentSelectorGrid: React.FC = () => {
     // Apply filter model
     gridApi.setFilterModel(filterModel);
     
-    // Apply sort model if wildcard is present using applyColumnState
+    // Apply sort model if wildcard is present
     if (sortModel.length > 0) {
       gridApi.applyColumnState({
         state: [{
@@ -279,22 +683,12 @@ export const DocumentSelectorGrid: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [globalSearch, handleGlobalSearch]);
 
-  // Handle selection changes
-  const onSelectionChanged = useCallback(() => {
-    if (!gridApi) return;
-    
-    const selectedRows = gridApi.getSelectedRows();
-    setSelectedFiles(selectedRows);
-  }, [gridApi]);
-
   // Show advanced filter
   const toggleAdvancedFilter = useCallback(() => {
     if (!gridApi) return;
-    let currentfilter = gridApi.getGridOption('enableAdvancedFilter')
-    // Enable advanced filter first
+    let currentfilter = gridApi.getGridOption('enableAdvancedFilter');
     gridApi.setGridOption('enableAdvancedFilter', !currentfilter);
     
-    // Then show the builder
     setTimeout(() => {
       if (gridApi.showAdvancedFilterBuilder) {
         gridApi.showAdvancedFilterBuilder();
@@ -306,7 +700,6 @@ export const DocumentSelectorGrid: React.FC = () => {
   const clearAllFilters = useCallback(() => {
     if (!gridApi) return;
     gridApi.setFilterModel({});
-    // Use applyColumnState for sorting in newer versions
     gridApi.applyColumnState({
       state: [],
       defaultState: { sort: null }
@@ -323,6 +716,13 @@ export const DocumentSelectorGrid: React.FC = () => {
   const getParsedSearchInfo = () => {
     if (!globalSearch.trim()) return null;
     return AGGridSearchParser.parseSearchInput(globalSearch);
+  };
+
+  // Get chronologically ordered selections for display
+  const getOrderedSelections = () => {
+    return selectedFiles
+      .sort((a, b) => a.order - b.order)  // Sort by selection order, not visual position
+      .map(selection => selection.item);
   };
 
   return (
@@ -355,6 +755,33 @@ export const DocumentSelectorGrid: React.FC = () => {
           </Button>
         </div>
         
+        {/* Multi-select mode indicator */}
+        {isMultiSelectMode && (
+          <div className="mb-2">
+            <Badge
+              variant="secondary"
+              className="bg-blue-600 text-white text-xs"
+            >
+              MULTI-SELECT MODE
+            </Badge>
+          </div>
+        )}
+
+        {/* Keyboard Instructions */}
+        <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs text-blue-700 mb-2">
+          <div className="flex gap-4">
+            <span><kbd>Space</kbd> toggle</span>
+            <span><kbd>Shift+↑↓</kbd> range select (chronological order)</span>
+            <span><kbd>Ctrl+Click</kbd> multi</span>
+            <span><kbd>Shift+Click</kbd> range</span>
+            <span><kbd>Esc</kbd> clear</span>
+            <span><kbd>Ctrl+A</kbd> select all</span>
+          </div>
+          <div className="mt-1 text-xs text-blue-600">
+            💡 Order numbers reflect selection sequence: Shift+Down = 1,2,3... | Shift+Up = 1,2,3... (anchor first)
+          </div>
+        </div>
+        
         {/* Search hint */}
         <div className="text-xs text-gray-600 mb-1">
           {getSearchHint()}
@@ -369,19 +796,68 @@ export const DocumentSelectorGrid: React.FC = () => {
               {getParsedSearchInfo()?.fileNameQuery && ` | Filename: "${getParsedSearchInfo()?.fileNameQuery}"`}
               {getParsedSearchInfo()?.hasWildcard && ' | Has Wildcard'}
             </div>
-            <div className="text-xs text-blue-600">
-              Applied Filters: {JSON.stringify(AGGridSearchParser.createFilterModel(globalSearch, {
-                pathField: 'filePath',
-                fileNameField: 'fileName'
-              }))}
-            </div>
           </div>
         )}
         
-        {/* Selection summary */}
+        {/* Selection summary with chronological order debugging */}
         {selectedFiles.length > 0 && (
-          <div className="mt-2 text-sm text-blue-600">
-            {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
+          <div className="mt-2 space-y-1">
+            {/* <div className="text-sm text-blue-600">
+              {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
+              {rangeAnchor && ` | Anchor: ${rangeAnchor.slice(-6)}`}
+            </div>
+            
+            Enhanced debug info showing chronological selection order
+            <div className="text-xs text-gray-500">
+              Selection Order: {selectedFiles
+                .sort((a, b) => a.order - b.order)
+                .map(s => `${s.order}→${s.item.id.slice(-6)}`)
+                .join(' → ')}
+            </div> */}
+            
+            {/* Show chronological selection sequence */}
+            {/* <div className="text-xs text-purple-600">
+              Chronological: {selectedFiles
+                .sort((a, b) => a.order - b.order)
+                .map(s => `${s.order}.${s.item.fileName.slice(0, 12)}`)
+                .join(' → ')}
+            </div> */}
+            
+            {/* Show visual grid positions for comparison */}
+            {/* <div className="text-xs text-orange-600">
+              Grid Positions: {selectedFiles
+                .sort((a, b) => {
+                  // Sort by actual grid position for comparison
+                  if (!gridApi) return 0;
+                  const allNodes: any[] = [];
+                  gridApi.forEachNodeAfterFilterAndSort(node => allNodes.push(node));
+                  const aIndex = allNodes.findIndex(node => node.data.id === a.item.id);
+                  const bIndex = allNodes.findIndex(node => node.data.id === b.item.id);
+                  return aIndex - bIndex;
+                })
+                .map((s, visualIndex) => `${visualIndex + 1}.${s.item.fileName.slice(0, 8)}(${s.order})`)
+                .join(' → ')}
+            </div> */}
+            
+            {/* Bulk Actions */}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={clearAllSelections}
+                className="text-xs"
+              >
+                ✕ Clear All ({selectedFiles.length})
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={selectAll}
+                className="text-xs"
+              >
+                📄 Select All Visible
+              </Button>
+            </div>
           </div>
         )}
       </div>
@@ -394,24 +870,36 @@ export const DocumentSelectorGrid: React.FC = () => {
           columnDefs={columnDefs}
           gridOptions={gridOptions}
           onGridReady={onGridReady}
-          onSelectionChanged={onSelectionChanged}
+          onCellClicked={onCellClicked}
           suppressMenuHide={true}
-          enableCellTextSelection={true}
+          enableCellTextSelection={false}
           theme="legacy"
         />
       </div>
 
-      {/* Selection Details */}
+      {/* Selection Details - Chronological Order */}
       {selectedFiles.length > 0 && (
-        <div className="p-4 border-t bg-gray-50 max-h-48 overflow-y-auto">
-          <h3 className="font-medium mb-2">Selected Files:</h3>
+        <div className="p-4 border-t bg-gray-50 max-h-12 overflow-y-auto">
+          <h3 className="font-medium mb-2">Selected Files (chronological order):</h3>
           <div className="space-y-1">
-            {selectedFiles.map((file) => (
-              <div key={file.id} className="text-sm flex items-center justify-between">
-                <span className="font-medium">{file.fileName}</span>
-                <span className="text-gray-500 text-xs">{file.filePath}</span>
-              </div>
-            ))}
+            {getOrderedSelections().map((file, index) => {
+              const selection = selectedFiles.find(s => s.item.id === file.id);
+              return (
+                <div key={file.id} className="text-sm flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className="bg-emerald-50 text-emerald-700 border-emerald-300 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
+                    >
+                      {selection?.order || index + 1}
+                    </Badge>
+                    <span className="font-medium">{file.fileName}</span>
+                    <span className="text-xs text-gray-400">({file.id.slice(-8)})</span>
+                  </div>
+                  <span className="text-gray-500 text-xs">{file.filePath}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
