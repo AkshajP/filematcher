@@ -228,60 +228,82 @@ export default function HomePage() {
   };
 
   const handleStartAutoMatch = async () => {
-    if (matcher.unmatchedReferences.length === 0) {
-      alert('No unmapped references found to auto-match.');
-      return;
-    }
+  // Validate preconditions
+  if (!matcher.unmatchedReferences || matcher.unmatchedReferences.length === 0) {
+    alert('No unmapped references found to auto-match.');
+    return;
+  }
 
-    if (matcher.filePaths.length === 0) {
-      alert('No file paths loaded. Please upload a folder structure first.');
-      return;
-    }
+  if (!matcher.filePaths || matcher.filePaths.length === 0) {
+    alert('No file paths loaded. Please upload a folder structure first.');
+    return;
+  }
 
-    if (!isWorkerReady) {
-      alert('Search worker is not ready. Please wait for initialization to complete.');
-      return;
-    }
+  if (!isWorkerReady) {
+    alert('Search worker is not ready. Please wait for initialization to complete.');
+    return;
+  }
 
-    try {
-      console.log('Starting worker-powered auto-match process...');
-      
-      setAutoMatchDialog({
-        isOpen: true,
-        isProcessing: true,
-        progress: 0
-      });
+  try {
+    console.log('Starting worker-powered auto-match process...');
+    
+    setAutoMatchDialog({
+      isOpen: true,
+      isProcessing: true,
+      progress: 0
+    });
 
-      const result = await generateAutoMatch((progressData) => {
-        // Handle progress updates
-        if (progressData.type === 'AUTO_MATCH_PROGRESS') {
-          setAutoMatchDialog(prev => ({
-            ...prev,
-            progress: progressData.progress,
-            currentItem: progressData.currentReference
-          }));
-        }
-      });
-
-      if (result.suggestions.filter(s => s.suggestedPath).length === 0) {
-        setAutoMatchDialog({ isOpen: false });
-        alert('No suggestions could be generated. Try adjusting your file descriptions or check if files are already matched.');
-        return;
+    const result = await generateAutoMatch((progressData) => {
+      // Handle progress updates
+      if (progressData && progressData.type === 'AUTO_MATCH_PROGRESS') {
+        setAutoMatchDialog(prev => ({
+          ...prev,
+          progress: progressData.progress || 0,
+          currentItem: progressData.currentReference
+        }));
       }
+    });
 
-      setAutoMatchDialog({
-        isOpen: true,
-        result,
-        isProcessing: false
-      });
-
-      console.log(`Generated ${result.suggestions.length} auto match suggestions using workers`);
-    } catch (error) {
-      console.error('Failed to generate auto match suggestions:', error);
+    // Enhanced validation with multiple checks
+    if (!result || typeof result !== 'object') {
+      console.error('Auto-match returned invalid result:', result);
       setAutoMatchDialog({ isOpen: false });
-      alert('Failed to generate suggestions. Please try again.');
+      alert('Auto-match failed to return valid results. Please try again.');
+      return;
     }
-  };
+
+    if (!Array.isArray(result.suggestions)) {
+      console.error('Auto-match returned invalid suggestions:', result.suggestions);
+      setAutoMatchDialog({ isOpen: false });
+      alert('Auto-match returned invalid suggestions format. Please try again.');
+      return;
+    }
+
+    // Check if we have any valid suggestions with paths
+    const validSuggestions = result.suggestions.filter(s => s && s.suggestedPath && s.suggestedPath.trim() !== '');
+    
+    if (validSuggestions.length === 0) {
+      setAutoMatchDialog({ isOpen: false });
+      alert('No suggestions could be generated. Try adjusting your file descriptions or check if files are already matched.');
+      return;
+    }
+
+    setAutoMatchDialog({
+      isOpen: true,
+      result,
+      isProcessing: false
+    });
+
+    console.log(`Generated ${validSuggestions.length}/${result.suggestions.length} valid auto match suggestions`);
+  } catch (error) {
+    console.error('Failed to generate auto match suggestions:', error);
+    setAutoMatchDialog({ isOpen: false });
+    
+    // More specific error messages
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    alert(`Failed to generate suggestions: ${errorMessage}. Please try again.`);
+  }
+};
 
   const handleAutoMatchAccept = async (acceptedSuggestions: AutoMatchSuggestion[]) => {
     if (acceptedSuggestions.length === 0) {

@@ -213,19 +213,37 @@ export function useMatcherLogic() {
 
   // Worker-powered auto-match function
   const generateAutoMatch = useCallback(async (onProgress?: (data: any) => void) => {
-    try {
-      const result = await workerManagerRef.current.generateAutoMatch(
-        matcher.unmatchedReferences,
-        matcher.filePaths,
-        matcher.usedFilePaths,
-        onProgress
-      );
-      return result;
-    } catch (error) {
-      console.error('Auto-match generation failed:', error);
-      throw error;
+  try {
+    const result = await workerManagerRef.current.generateAutoMatch(
+      matcher.unmatchedReferences,
+      matcher.filePaths,
+      matcher.usedFilePaths,
+      onProgress
+    );
+    
+    // Validate result structure
+    if (!result || typeof result !== 'object') {
+      throw new Error('Invalid result structure from auto-match');
     }
-  }, [matcher.unmatchedReferences, matcher.filePaths, matcher.usedFilePaths]);
+    
+    if (!Array.isArray(result.suggestions)) {
+      console.warn('Auto-match returned invalid suggestions, creating empty array');
+      result.suggestions = [];
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Auto-match generation failed:', error);
+    // Return a valid empty result structure instead of throwing
+    return {
+      suggestions: [],
+      totalReferences: matcher.unmatchedReferences?.length || 0,
+      suggestionsWithHighConfidence: 0,
+      suggestionsWithMediumConfidence: 0,
+      suggestionsWithLowConfidence: 0
+    };
+  }
+}, [matcher.unmatchedReferences, matcher.filePaths, matcher.usedFilePaths]);
 
   // Update search index when file paths change
   const updateSearchIndex = useCallback(async (newFilePaths: string[]) => {

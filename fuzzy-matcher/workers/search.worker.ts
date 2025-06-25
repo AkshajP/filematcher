@@ -1,6 +1,10 @@
+// workers/search.worker.ts - Debug Enhanced Search Worker
+
+console.log('🔍 Search worker script loaded');
+
 import { SearchResult } from '../lib/types';
 
-// Memoization function for worker context
+// Memoization function
 function memoize<T extends (...args: any[]) => any>(fn: T): T {
   const cache = new Map<string, ReturnType<T>>();
   
@@ -16,363 +20,230 @@ function memoize<T extends (...args: any[]) => any>(fn: T): T {
   }) as T;
 }
 
-// Core matching algorithms (moved from fuzzy-matcher.ts)
-const calculateSimilarity = memoize((string1: string, string2: string): number => {
-  if (!string1 || !string2) return 0;
+// Core similarity calculation (memoized for performance)
+const calculateSimilarity = memoize((searchTerm: string, filePath: string): number => {
+  if (!searchTerm || !filePath) return 0;
   
-  const str1 = string1.toLowerCase();
-  const str2 = string2.toLowerCase();
+  const search = searchTerm.toLowerCase();
+  const path = filePath.toLowerCase();
   
-  if (str1 === str2) return 1.0;
-  if (str1.includes(str2)) return 0.9;
-  if (str2.includes(str1)) return 0.85;
+  // Exact match
+  if (path.includes(search)) return 1.0;
   
-  const words1 = str1.split(/[\s\/\-_\.]+/);
-  const words2 = str2.split(/[\s\/\-_\.]+/);
+  // Word-based matching
+  const searchWords = search.split(/[\s\/\-_\.]+/).filter(word => word.length > 2);
+  const pathWords = path.split(/[\s\/\-_\.]+/).filter(word => word.length > 2);
   
-  let wordMatches = 0;
-  for (const word2 of words2) {
-    for (const word1 of words1) {
-      if (word1.includes(word2) || word2.includes(word1)) {
-        wordMatches++;
-        break;
+  if (searchWords.length === 0) return 0;
+  
+  let score = 0;
+  let matchedWords = 0;
+  
+  for (const searchWord of searchWords) {
+    let bestWordScore = 0;
+    
+    for (const pathWord of pathWords) {
+      if (pathWord.includes(searchWord)) {
+        bestWordScore = Math.max(bestWordScore, 0.9);
+      } else if (searchWord.includes(pathWord)) {
+        bestWordScore = Math.max(bestWordScore, 0.7);
+      } else {
+        // Levenshtein-like partial matching for typos
+        const longer = searchWord.length > pathWord.length ? searchWord : pathWord;
+        const shorter = searchWord.length > pathWord.length ? pathWord : searchWord;
+        
+        if (longer.includes(shorter) && shorter.length > 2) {
+          bestWordScore = Math.max(bestWordScore, 0.5);
+        }
       }
     }
-  }
-  
-  const wordScore = wordMatches / Math.max(words1.length, words2.length);
-  
-  const chars1 = [...str1];
-  const chars2 = [...str2];
-  let charMatches = 0;
-  
-  for (const char of chars2) {
-    const index = chars1.indexOf(char);
-    if (index !== -1) {
-      charMatches++;
-      chars1.splice(index, 1);
+    
+    if (bestWordScore > 0) {
+      matchedWords++;
+      score += bestWordScore;
     }
   }
   
-  const charScore = charMatches / Math.max(str1.length, str2.length);
-  return (wordScore * 0.7) + (charScore * 0.3);
+  return matchedWords > 0 ? (score / searchWords.length) * (matchedWords / searchWords.length) : 0;
 });
 
-function calculateFuzzyScore(filePath: string, searchTerm: string): number {
-  if (!searchTerm.trim()) return 0;
+/**
+ * Search Index class for worker
+ */
+class SearchIndex {
+  private filePaths: string[] = [];
   
-  const parts = filePath.split('/');
-  const fileName = parts.pop() || '';
-  const pathParts = parts.join('/');
-  const folderNames = parts.slice(0, -1);
-  
-  if (searchTerm.endsWith('/')) {
-    const folderSearchTerm = searchTerm.slice(0, -1);
-    return calculateSimilarity(pathParts, folderSearchTerm);
-  }
-  
-  if (searchTerm.includes('/')) {
-    const searchParts = searchTerm.split('/');
-    const searchPath = searchParts.slice(0, -1).join('/');
-    const searchFile = searchParts[searchParts.length - 1];
-    
-    const pathScore = calculateSimilarity(pathParts, searchPath);
-    const fileScore = calculateSimilarity(fileName, searchFile);
-    
-    return (fileScore * 0.7) + (pathScore * 0.5);
-  }
-  
-  const fileNameScore = calculateSimilarity(fileName, searchTerm);
-  
-  let bestFolderScore = 0;
-  for (const folderName of folderNames) {
-    const folderScore = calculateSimilarity(folderName, searchTerm);
-    bestFolderScore = Math.max(bestFolderScore, folderScore);
-  }
-  
-  return Math.max(fileNameScore * 0.8 + bestFolderScore * 0.3, bestFolderScore * 0.8);
-}
-
-function cleanFileName(text: string): string {
-  if (!text) return "";
-  
-  return text
-    .replace(/\.[^/.]+$/, '')
-    .replace(/^\w+-/, '')
-    .replace(/\d{4}-\d{2}-\d{2}/, '')
-    .replace(/_v\d+/, '')
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function extractKeyTerms(text: string): string {
-  if (!text) return "";
-  const keyTermRegex = /([A-Z]+-?\d+-\d+)|([A-Z]+-?\d+)|(\d{3,})/g;
-  const matches = text.match(keyTermRegex);
-  return matches ? matches.join(' ') : cleanFileName(text);
-}
-
-// Worker-based SearchIndex implementation
-class WorkerSearchIndex {
-  private allFilePaths: string[];
-  private searchIndex: Map<string, Set<string>>;
-
   constructor(filePaths: string[]) {
-    this.allFilePaths = filePaths;
-    this.searchIndex = this.buildIndex(filePaths);
+    console.log(`🔍 Worker: Creating SearchIndex with ${filePaths.length} file paths`);
+    this.filePaths = filePaths;
+    console.log('🔍 Worker: SearchIndex created successfully');
   }
-
-  private buildIndex(filePaths: string[]): Map<string, Set<string>> {
-    const index = new Map<string, Set<string>>();
-    const totalPaths = filePaths.length;
+  
+  search(searchTerm: string, usedFilePaths: Set<string>, maxResults: number = 50): SearchResult[] {
+    console.log(`🔍 Worker: Searching for "${searchTerm}" (excluding ${usedFilePaths.size} used paths)`);
     
-    for (let i = 0; i < filePaths.length; i++) {
-      const path = filePaths[i];
+    if (!searchTerm || searchTerm.trim().length === 0) {
+      console.log('🔍 Worker: Empty search term, returning empty results');
+      return [];
+    }
+    
+    const trimmedSearchTerm = searchTerm.trim();
+    const availablePaths = this.filePaths.filter(path => !usedFilePaths.has(path));
+    
+    console.log(`🔍 Worker: Searching ${availablePaths.length}/${this.filePaths.length} available paths`);
+    
+    const results: SearchResult[] = [];
+    
+    for (const filePath of availablePaths) {
+      const similarity = calculateSimilarity(trimmedSearchTerm, filePath);
       
-      // Progress reporting for large datasets
-      if (i % 1000 === 0) {
-        self.postMessage({
-          type: 'INDEX_PROGRESS',
-          progress: (i / totalPaths) * 100,
-          completed: i,
-          total: totalPaths
+      if (similarity > 0.1) { // Minimum threshold
+        results.push({
+          path: filePath,
+          score: similarity
         });
       }
-      
-      const pathTokens = cleanFileName(path.replace(/\//g, ' ')).split(' ');
-      const keyTermTokens = extractKeyTerms(path).toLowerCase().split(' ');
-      const allTokens = new Set([...pathTokens, ...keyTermTokens].filter(t => t.length > 1));
-
-      for (const token of allTokens) {
-        if (!index.has(token)) {
-          index.set(token, new Set());
-        }
-        index.get(token)!.add(path);
-      }
     }
     
-    return index;
+    // Sort by score (descending) and limit results
+    results.sort((a, b) => b.score - a.score);
+    const limitedResults = results.slice(0, maxResults);
+    
+    console.log(`🔍 Worker: Found ${results.length} matches, returning top ${limitedResults.length}`);
+    
+    return limitedResults;
   }
-
-  private hasRegexPattern(searchTerm: string): boolean {
-    return /[*?+\[\](){}|\\^$]/.test(searchTerm);
-  }
-
-  private createRegexFromPattern(pattern: string): RegExp {
-    let regexPattern = pattern
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\\\*/g, '(.*)')
-      .replace(/\\\?/g, '(.)');
-
-    return new RegExp(regexPattern, 'i');
-  }
-
-  private extractSortableValue(filePath: string, regex: RegExp): { value: string; sortKey: number | string } {
-    const fileName = filePath.split('/').pop() || filePath;
-    const match = fileName.match(regex);
-    
-    if (!match || !match[1]) {
-      return { value: fileName, sortKey: fileName };
-    }
-
-    const capturedValue = match[1];
-    const numberMatch = capturedValue.match(/(\d+)/);
-    if (numberMatch) {
-      return { 
-        value: capturedValue, 
-        sortKey: parseInt(numberMatch[1], 10) 
-      };
-    }
-
-    return { value: capturedValue, sortKey: capturedValue };
-  }
-
-  private applyRegexSorting(results: SearchResult[], pattern: string): SearchResult[] {
-    const regex = this.createRegexFromPattern(pattern);
-    
-    const regexMatches = results.filter(result => {
-      const fileName = result.path.split('/').pop() || result.path;
-      return regex.test(fileName);
-    });
-
-    if (regexMatches.length === 0) {
-      return results;
-    }
-
-    const withSortKeys = regexMatches.map(result => ({
-      ...result,
-      sortData: this.extractSortableValue(result.path, regex)
-    }));
-
-    withSortKeys.sort((a, b) => {
-      const aKey = a.sortData.sortKey;
-      const bKey = b.sortData.sortKey;
-
-      if (typeof aKey === 'number' && typeof bKey === 'number') {
-        return aKey - bKey;
-      }
-
-      if (typeof aKey === 'string' && typeof bKey === 'string') {
-        return aKey.localeCompare(bKey);
-      }
-
-      if (typeof aKey === 'number') return -1;
-      if (typeof bKey === 'number') return 1;
-
-      return 0;
-    });
-
-    return withSortKeys.map(({ sortData, ...result }) => result);
-  }
-
-  public search(searchTerm: string, usedFilePaths: Set<string>): SearchResult[] {
-    const availableFilePaths = this.allFilePaths.filter(path => !usedFilePaths.has(path));
-    const trimmedSearchTerm = searchTerm.trim();
-    
-    if (!trimmedSearchTerm) {
-      return availableFilePaths.map(path => ({ path, score: 0 }));
-    }
-
-    const isRegexPattern = this.hasRegexPattern(trimmedSearchTerm);
-    
-    if (isRegexPattern) {
-      const basePattern = trimmedSearchTerm.replace(/[*?+\[\](){}|\\^$]/g, '');
-      const cleanedSearchTerm = cleanFileName(basePattern);
-      const keyTermsSearch = extractKeyTerms(basePattern);
-      
-      if (cleanedSearchTerm.trim() || keyTermsSearch.trim()) {
-        const searchTokens = new Set([
-          ...cleanedSearchTerm.split(' '),
-          ...keyTermsSearch.toLowerCase().split(' ')
-        ].filter(t => t.length > 1));
-        
-        const candidatePaths = new Set<string>();
-        for (const token of searchTokens) {
-          for (const [indexKey, paths] of this.searchIndex.entries()) {
-            if (indexKey.includes(token)) {
-              paths.forEach(path => candidatePaths.add(path));
-            }
-          }
-        }
-
-        const fuzzyMatches = Array.from(candidatePaths)
-          .filter(path => !usedFilePaths.has(path))
-          .map(filePath => {
-            const pathParts = filePath.split('/');
-            const fileName = pathParts[pathParts.length - 1];
-            const cleanedFileName = cleanFileName(fileName);
-            
-            const originalScore = calculateFuzzyScore(filePath, basePattern);
-            const cleanedScore = calculateFuzzyScore(cleanedFileName, cleanedSearchTerm);
-            const keyTermsScore = calculateFuzzyScore(filePath, keyTermsSearch);
-            
-            return {
-              path: filePath,
-              score: Math.max(originalScore, cleanedScore, keyTermsScore)
-            };
-          })
-          .filter(item => item.score > 0.05)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 100);
-
-        return this.applyRegexSorting(fuzzyMatches, trimmedSearchTerm);
-      } else {
-        const allResults = availableFilePaths.map(path => ({ path, score: 0.5 }));
-        return this.applyRegexSorting(allResults, trimmedSearchTerm);
-      }
-    }
-
-    // Regular fuzzy search
-    const cleanedSearchTerm = cleanFileName(trimmedSearchTerm);
-    const keyTermsSearch = extractKeyTerms(trimmedSearchTerm);
-    const searchTokens = new Set([
-        ...cleanedSearchTerm.split(' '),
-        ...keyTermsSearch.toLowerCase().split(' ')
-    ].filter(t => t.length > 1));
-    
-    const candidatePaths = new Set<string>();
-    for (const token of searchTokens) {
-        for (const [indexKey, paths] of this.searchIndex.entries()) {
-            if(indexKey.includes(token)) {
-                paths.forEach(path => candidatePaths.add(path));
-            }
-        }
-    }
-
-    const matches = Array.from(candidatePaths)
-      .filter(path => !usedFilePaths.has(path))
-      .map(filePath => {
-        const pathParts = filePath.split('/');
-        const fileName = pathParts[pathParts.length - 1];
-        const cleanedFileName = cleanFileName(fileName);
-        
-        const originalScore = calculateFuzzyScore(filePath, trimmedSearchTerm);
-        const cleanedScore = calculateFuzzyScore(cleanedFileName, cleanedSearchTerm);
-        const keyTermsScore = calculateFuzzyScore(filePath, keyTermsSearch);
-        
-        return {
-          path: filePath,
-          score: Math.max(originalScore, cleanedScore, keyTermsScore)
-        };
-      })
-      .filter(item => item.score > 0.05);
-      
-    matches.sort((a, b) => b.score - a.score);
-    return matches.slice(0, 50);
+  
+  updateIndex(filePaths: string[]): void {
+    console.log(`🔍 Worker: Updating index with ${filePaths.length} file paths`);
+    this.filePaths = filePaths;
+    console.log('🔍 Worker: Index updated successfully');
   }
 }
 
-// Worker state
-let searchIndex: WorkerSearchIndex | null = null;
+// Global search index instance
+let searchIndex: SearchIndex | null = null;
 
-// Message handler
+// Message handler with enhanced debugging
 self.onmessage = function(e) {
+  console.log('🔍 Worker: Received message:', {
+    messageType: typeof e.data,
+    hasType: !!e.data?.type,
+    hasId: !!e.data?.id,
+    hasData: !!e.data?.data,
+    fullMessage: e.data
+  });
+
   const { type, id, data } = e.data;
   
+  if (!type) {
+    console.error('🔍 Worker: Message missing type field');
+    self.postMessage({
+      type: 'ERROR',
+      id,
+      error: 'Message missing type field'
+    });
+    return;
+  }
+
+  if (!id) {
+    console.error('🔍 Worker: Message missing id field');
+    self.postMessage({
+      type: 'ERROR',
+      error: 'Message missing id field'
+    });
+    return;
+  }
+
   try {
+    console.log(`🔍 Worker: Processing message type: ${type}`);
+    
     switch (type) {
       case 'INITIALIZE_INDEX':
-        const { filePaths } = data;
-        searchIndex = new WorkerSearchIndex(filePaths);
+        console.log('🔍 Worker: Handling INITIALIZE_INDEX request');
+        
+        if (!data || !Array.isArray(data.filePaths)) {
+          console.error('🔍 Worker: INITIALIZE_INDEX missing valid filePaths array');
+          throw new Error('Missing valid filePaths array');
+        }
+        
+        console.log(`🔍 Worker: Initializing index with ${data.filePaths.length} file paths`);
+        
+        if (searchIndex) {
+          console.log('🔍 Worker: Updating existing search index');
+          searchIndex.updateIndex(data.filePaths);
+        } else {
+          console.log('🔍 Worker: Creating new search index');
+          searchIndex = new SearchIndex(data.filePaths);
+        }
+        
+        console.log('🔍 Worker: Sending INITIALIZE_COMPLETE response');
         self.postMessage({
           type: 'INITIALIZE_COMPLETE',
           id,
-          data: { indexSize: filePaths.length }
+          data: { 
+            success: true,
+            indexedPaths: data.filePaths.length
+          }
         });
         break;
         
       case 'SEARCH':
+        console.log('🔍 Worker: Handling SEARCH request');
+        
         if (!searchIndex) {
+          console.error('🔍 Worker: Search index not initialized');
           throw new Error('Search index not initialized');
         }
         
+        if (!data) {
+          console.error('🔍 Worker: SEARCH message missing data');
+          throw new Error('Missing search data');
+        }
+        
         const { searchTerm, usedFilePaths } = data;
-        const usedPathsSet = new Set(usedFilePaths);
+        
+        console.log('🔍 Worker: Search parameters:', {
+          searchTermType: typeof searchTerm,
+          searchTermLength: searchTerm?.length,
+          usedFilePathsType: typeof usedFilePaths,
+          usedFilePathsLength: usedFilePaths?.length
+        });
+        
+        if (!searchTerm || typeof searchTerm !== 'string') {
+          console.error('🔍 Worker: Invalid search term');
+          throw new Error('Invalid search term');
+        }
+        
+        // Convert usedFilePaths array back to Set
+        const usedPathsSet = new Set(Array.isArray(usedFilePaths) ? usedFilePaths : []);
+        console.log(`🔍 Worker: Converted usedFilePaths to Set with ${usedPathsSet.size} items`);
+        
+        console.log('🔍 Worker: Performing search...');
         const results = searchIndex.search(searchTerm, usedPathsSet);
+        
+        console.log(`🔍 Worker: Search completed, found ${results.length} results`);
+        console.log('🔍 Worker: Sending SEARCH_COMPLETE response');
         
         self.postMessage({
           type: 'SEARCH_COMPLETE',
           id,
-          data: { results }
-        });
-        break;
-        
-      case 'UPDATE_USED_PATHS':
-        // This is for future optimization - we could cache used paths
-        self.postMessage({
-          type: 'USED_PATHS_UPDATED',
-          id,
-          data: { success: true }
+          data: { 
+            results: results,
+            searchTerm: searchTerm,
+            resultCount: results.length
+          }
         });
         break;
         
       default:
+        console.error(`🔍 Worker: Unknown message type: ${type}`);
         throw new Error(`Unknown message type: ${type}`);
     }
   } catch (error) {
+    console.error('🔍 Worker: Error processing message:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
     self.postMessage({
       type: 'ERROR',
       id,
@@ -381,8 +252,15 @@ self.onmessage = function(e) {
   }
 };
 
-// Error handling
+// Global error handling
 self.onerror = function(error) {
+  console.error('🔍 Worker: Global error:', {
+    message: error.message,
+    filename: error.filename,
+    lineno: error.lineno,
+    colno: error.colno
+  });
+  
   self.postMessage({
     type: 'WORKER_ERROR',
     error: {
@@ -393,8 +271,9 @@ self.onerror = function(error) {
   });
 };
 
-// Handle unhandled promise rejections
 self.addEventListener('unhandledrejection', function(event) {
+  console.error('🔍 Worker: Unhandled promise rejection:', event.reason);
+  
   self.postMessage({
     type: 'WORKER_ERROR',
     error: {
@@ -403,3 +282,5 @@ self.addEventListener('unhandledrejection', function(event) {
     }
   });
 });
+
+console.log('🔍 Search worker fully initialized and ready');
