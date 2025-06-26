@@ -6,7 +6,7 @@ import { AgGridReact } from 'ag-grid-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Search, Settings } from 'lucide-react';
+import { Search, Settings, Table, TreePine } from 'lucide-react';
 
 // Import required AG Grid modules
 import { ModuleRegistry } from 'ag-grid-community'; 
@@ -21,7 +21,6 @@ import {
   GridApi, 
   ITextFilterParams,
   CellClickedEvent,
-  RowClickedEvent
 } from 'ag-grid-community';
 
 // Import styles
@@ -37,10 +36,16 @@ interface DocumentFile {
   fileType?: string;
 }
 
+interface TreeDataFile extends DocumentFile {
+  folderHierarchy: string[];
+}
+
 interface OrderedSelection {
   item: DocumentFile;
   order: number;
 }
+
+type ViewMode = 'table' | 'tree';
 
 import { AGGridSearchParser } from '@/lib/ag-grid-search-utils';
 
@@ -49,16 +54,21 @@ const generateSampleData = (): DocumentFile[] => {
   const sampleFiles = [
     { path: '/contracts/legal/service-agreement-2024.pdf', type: 'pdf', size: 1024000 },
     { path: '/contracts/legal/nda-template.docx', type: 'docx', size: 512000 },
+    { path: '/contracts/vendor/software-license.pdf', type: 'pdf', size: 768000 },
     { path: '/exhibits/evidence/witness-statement-1.pdf', type: 'pdf', size: 2048000 },
     { path: '/exhibits/evidence/witness-statement-2.pdf', type: 'pdf', size: 1536000 },
     { path: '/exhibits/photos/accident-scene.jpg', type: 'jpg', size: 3072000 },
+    { path: '/exhibits/photos/damage-assessment.jpg', type: 'jpg', size: 2560000 },
     { path: '/reports/financial/quarterly-report-q1.xlsx', type: 'xlsx', size: 768000 },
     { path: '/reports/financial/quarterly-report-q2.xlsx', type: 'xlsx', size: 832000 },
+    { path: '/reports/technical/system-analysis.docx', type: 'docx', size: 1024000 },
     { path: '/correspondence/client/agreement-draft.docx', type: 'docx', size: 256000 },
     { path: '/correspondence/client/agreement-final.pdf', type: 'pdf', size: 1280000 },
+    { path: '/correspondence/vendor/proposal-request.pdf', type: 'pdf', size: 640000 },
     { path: '/discovery/documents/exhibit-a-contract.pdf', type: 'pdf', size: 1792000 },
     { path: '/discovery/documents/exhibit-b-correspondence.pdf', type: 'pdf', size: 640000 },
     { path: '/discovery/documents/exhibit-c-financial.xlsx', type: 'xlsx', size: 896000 },
+    { path: '/discovery/depositions/witness-a.pdf', type: 'pdf', size: 3200000 },
     { path: '/pleadings/motions/motion-to-dismiss.pdf', type: 'pdf', size: 1152000 },
     { path: '/pleadings/briefs/opening-brief.docx', type: 'docx', size: 2304000 },
     { path: '/transcripts/depositions/witness-deposition-smith.pdf', type: 'pdf', size: 4096000 },
@@ -92,10 +102,25 @@ const generateSampleData = (): DocumentFile[] => {
   });
 };
 
-// Custom Selection Cell Renderer with Order Numbers
+// Build tree data using the simpler approach
+const buildTreeData = (files: DocumentFile[]): TreeDataFile[] => {
+  return files.map(file => {
+    const parts = file.filePath.split('/').filter(Boolean);
+    const fileName = parts.pop() || file.fileName;
+    return {
+      ...file,
+      fileName,
+      folderHierarchy: parts
+    };
+  });
+};
+
+// Custom Selection Cell Renderer for both views
 const SelectionCellRenderer = (props: any) => {
   const { data, node, api } = props;
   
+  // Don't show selection for group nodes (folders) in tree view
+  if (node.group) return null;
   if (!data) return null;
   
   // Get the current context from the grid API
@@ -142,8 +167,10 @@ const SelectionCellRenderer = (props: any) => {
 
 // Custom cell renderers
 const FileSizeCellRenderer = (props: any) => {
-  const { value } = props;
-  if (!value) return '-';
+  const { value, node } = props;
+  
+  // Don't show size for group nodes (folders)
+  if (node.group || !value) return '-';
   
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return '0 B';
@@ -156,7 +183,9 @@ const FileSizeCellRenderer = (props: any) => {
   return formatBytes(value);
 };
 
+// Table view file path renderer
 const FilePathCellRenderer = (props: any) => {
+  console.log("props", props)
   const { value, data, api } = props;
   
   // Get the current context from the grid API
@@ -171,7 +200,7 @@ const FilePathCellRenderer = (props: any) => {
     <div className={`flex flex-col relative ${isCursor ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
       {/* Cursor indicator */}
       {isCursor && (
-        <div ></div>
+        <div></div>
       )}
       
       {folders.length > 0 && (
@@ -184,10 +213,57 @@ const FilePathCellRenderer = (props: any) => {
   );
 };
 
+// Auto group column renderer with folder/file icons
+const AutoGroupCellRenderer = (props: any) => {
+  const { value, node, data, api } = props;
+  
+  // Get the current context from the grid API
+  const gridContext = api.getGridOption('context');
+  const { cursorRowId } = gridContext || {};
+  
+  const isCursor = data && data.id === cursorRowId;
+  const isGroup = node.group;
+  const isExpanded = node.expanded;
+  
+  // For group nodes (folders)
+  if (isGroup) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-lg">
+          {isExpanded ? '📂' : '📁'}
+        </span>
+        <span className="font-medium text-gray-700">{value}</span>
+        <span className="text-xs text-gray-400 ml-2">
+          ({node.allChildrenCount || 0} items)
+        </span>
+      </div>
+    );
+  }
+  
+  // For file nodes
+  return (
+    <div className={`flex items-center gap-2 relative ${isCursor ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
+      {/* Cursor indicator */}
+      {isCursor && (
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 rounded-l"></div>
+      )}
+      
+      <span className="text-sm">
+        {data?.fileType === 'pdf' ? '📄' : 
+         data?.fileType === 'docx' ? '📝' : 
+         data?.fileType === 'xlsx' ? '📊' : 
+         data?.fileType === 'jpg' || data?.fileType === 'png' ? '🖼️' : '📄'}
+      </span>
+      <span className="font-medium text-sm">{value}</span>
+    </div>
+  );
+};
+
 export const DocumentSelectorGrid: React.FC = () => {
   const gridRef = useRef<AgGridReact>(null);
   const [globalSearch, setGlobalSearch] = useState<string>('');
   const [gridApi, setGridApi] = useState<GridApi | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('table');
   
   // Ordered multi-select state
   const [selectedFiles, setSelectedFiles] = useState<OrderedSelection[]>([]);
@@ -197,6 +273,14 @@ export const DocumentSelectorGrid: React.FC = () => {
 
   // Sample data
   const rowData = useMemo(() => generateSampleData(), []);
+  
+  // Transform data based on view mode
+  const displayData = useMemo(() => {
+    if (viewMode === 'tree') {
+      return buildTreeData(rowData);
+    }
+    return rowData;
+  }, [rowData, viewMode]);
 
   // Update multi-select mode based on selections
   useEffect(() => {
@@ -267,10 +351,12 @@ export const DocumentSelectorGrid: React.FC = () => {
   const handleRangeSelection = useCallback((startId: string, endId: string) => {
     if (!gridApi) return;
     
-    // Get all displayed (filtered) row nodes
+    // Get all displayed (filtered) row nodes - only files, not folders
     const allNodes: any[] = [];
     gridApi.forEachNodeAfterFilterAndSort(node => {
-      allNodes.push(node);
+      if (node.data && !node.group) {
+        allNodes.push(node);
+      }
     });
     
     const startIndex = allNodes.findIndex(node => node.data.id === startId);
@@ -324,7 +410,9 @@ export const DocumentSelectorGrid: React.FC = () => {
     
     const allItems: DocumentFile[] = [];
     gridApi.forEachNodeAfterFilterAndSort(node => {
-      allItems.push(node.data);
+      if (node.data && !node.group) {
+        allItems.push(node.data);
+      }
     });
     
     // Ensure no duplicates with Set-based deduplication
@@ -349,14 +437,223 @@ export const DocumentSelectorGrid: React.FC = () => {
     console.log('Cleared all selections');
   }, []);
 
+  // Table view column definitions
+  const tableColumnDefs = useMemo<ColDef[]>(() => [
+    {
+      headerName: '',
+      field: 'select',
+      width: 80,
+      pinned: 'left',
+      sortable: false,
+      filter: false,
+      cellRenderer: SelectionCellRenderer,
+      cellStyle: { padding: '0' }
+    },
+    {
+      headerName: 'File',
+      field: 'filePath',
+      flex: 2,
+      cellRenderer: FilePathCellRenderer,
+      filter: 'agTextColumnFilter',
+      filterParams: {
+        filterOptions: ['contains', 'startsWith', 'endsWith'],
+        debounceMs: 500,
+        caseSensitive: false
+      } as ITextFilterParams,
+      floatingFilter: true,
+      floatingFilterComponentParams: {
+        debounceMs: 500
+      }
+    },
+    {
+      headerName: 'File Name',
+      field: 'fileName',
+      flex: 1,
+      filter: 'agTextColumnFilter',
+      filterParams: {
+        filterOptions: ['contains', 'startsWith', 'endsWith'],
+        debounceMs: 500,
+        caseSensitive: false
+      } as ITextFilterParams,
+      floatingFilter: true,
+      floatingFilterComponentParams: {
+        debounceMs: 500
+      }
+    },
+    {
+      headerName: 'Type',
+      field: 'fileType',
+      width: 100,
+      filter: 'agSetColumnFilter',
+      filterParams: {
+        values: ['pdf', 'docx', 'xlsx', 'jpg', 'png'],
+        refreshValuesOnOpen: true
+      },
+      floatingFilter: true
+    },
+    {
+      headerName: 'Size',
+      field: 'fileSize',
+      width: 120,
+      cellRenderer: FileSizeCellRenderer,
+      filter: 'agNumberColumnFilter',
+      filterParams: {
+        debounceMs: 500
+      },
+      floatingFilter: true,
+      comparator: (valueA: number, valueB: number) => valueA - valueB
+    },
+    {
+      headerName: 'Modified',
+      field: 'dateModified',
+      width: 130,
+      filter: 'agDateColumnFilter',
+      filterParams: {
+        debounceMs: 500
+      },
+      floatingFilter: true
+    }
+  ], []);
+
+  // Tree view column definitions
+  const treeColumnDefs = useMemo<ColDef[]>(() => [
+    {
+      headerName: '',
+      field: 'select',
+      width: 80,
+      pinned: 'left',
+      sortable: false,
+      filter: false,
+      cellRenderer: SelectionCellRenderer,
+      cellStyle: { padding: '0' }
+    },
+    {
+      headerName: 'Name',
+      field: 'fileName',
+      flex: 2,
+      cellRenderer: 'agGroupCellRenderer',
+      filter: 'agTextColumnFilter',
+      filterParams: {
+        filterOptions: ['contains', 'startsWith', 'endsWith'],
+        debounceMs: 500,
+        caseSensitive: false
+      } as ITextFilterParams,
+      floatingFilter: true
+    },
+    {
+      headerName: 'Type',
+      field: 'fileType',
+      width: 100,
+      filter: 'agSetColumnFilter',
+      filterParams: {
+        values: ['pdf', 'docx', 'xlsx', 'jpg', 'png'],
+        refreshValuesOnOpen: true
+      },
+      floatingFilter: true,
+      valueGetter: (params) => {
+        return params.node?.group ? 'folder' : params.data?.fileType;
+      }
+    },
+    {
+      headerName: 'Size',
+      field: 'fileSize',
+      width: 120,
+      cellRenderer: FileSizeCellRenderer,
+      filter: 'agNumberColumnFilter',
+      filterParams: {
+        debounceMs: 500
+      },
+      floatingFilter: true,
+      comparator: (valueA: number, valueB: number) => valueA - valueB
+    },
+    {
+      headerName: 'Modified',
+      field: 'dateModified',
+      width: 130,
+      filter: 'agDateColumnFilter',
+      filterParams: {
+        debounceMs: 500
+      },
+      floatingFilter: true
+    }
+  ], []);
+
+  // Auto group column definition with folder/file icons
+  const autoGroupColumnDef = useMemo(() => ({
+    headerName: 'Path',
+    cellRenderer: AutoGroupCellRenderer,
+    cellRendererParams: {
+      suppressCount: true,
+    },
+    minWidth: 250,
+    flex: 1
+  }), []);
+
+  // Grid options with view-specific configurations
+  const gridOptions = useMemo(() => ({
+    rowSelection: undefined, // Disable built-in selection
+    suppressRowClickSelection: true, // Prevent default row selection
+    
+    // Tree data specific options
+    treeData: viewMode === 'tree',
+    getDataPath: viewMode === 'tree' ? (data: TreeDataFile) => {
+      return [...data.folderHierarchy, data.fileName];
+    } : undefined,
+    
+    // Auto group column for tree view
+    autoGroupColumnDef: viewMode === 'tree' ? autoGroupColumnDef : undefined,
+    
+    // Expand first level by default in tree view
+    groupDefaultExpanded: viewMode === 'tree' ? 1 : undefined,
+    
+    // Performance optimizations
+    rowBuffer: 10,
+    suppressRowVirtualisation: false,
+    cacheQuickFilter: true,
+    debounceVerticalScrollbar: true,
+    animateRows: viewMode === 'tree',
+    suppressColumnMoveAnimation: true,
+    
+    // Advanced filtering - disable by default, only show when button clicked
+    enableAdvancedFilter: false,
+    
+    // Floating filters
+    floatingFilter: true,
+    
+    // Default column properties
+    defaultColDef: {
+      sortable: true,
+      resizable: true,
+      filter: true
+    },
+
+    // Row ID for tracking - essential for proper selection management
+    getRowId: (params: any) => params.data.id,
+    
+    // Enable cell text selection
+    enableCellTextSelection: false
+  }), [viewMode, autoGroupColumnDef]);
+
+  // Get current column definitions based on view mode
+  const currentColumnDefs = useMemo(() => {
+    return viewMode === 'tree' ? treeColumnDefs : tableColumnDefs;
+  }, [viewMode, treeColumnDefs, tableColumnDefs]);
+
+  // View mode toggle handler
+  const toggleViewMode = useCallback(() => {
+    setViewMode(prev => prev === 'table' ? 'tree' : 'table');
+  }, []);
+
   // Fixed keyboard navigation with proper anchor handling
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (!gridApi || !cursorRowId) return;
 
-    // Get all displayed nodes
+    // Get all displayed nodes (files only)
     const allNodes: any[] = [];
     gridApi.forEachNodeAfterFilterAndSort(node => {
-      allNodes.push(node);
+      if (node.data && !node.group) {
+        allNodes.push(node);
+      }
     });
 
     const currentIndex = allNodes.findIndex(node => node.data.id === cursorRowId);
@@ -466,117 +763,6 @@ export const DocumentSelectorGrid: React.FC = () => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  // Column definitions
-  const columnDefs = useMemo<ColDef[]>(() => [
-    {
-      headerName: '',
-      field: 'select',
-      width: 80,
-      pinned: 'left',
-      sortable: false,
-      filter: false,
-      cellRenderer: SelectionCellRenderer,
-      cellStyle: { padding: '0' }
-    },
-    {
-      headerName: 'File',
-      field: 'filePath',
-      flex: 2,
-      cellRenderer: FilePathCellRenderer,
-      filter: 'agTextColumnFilter',
-      filterParams: {
-        filterOptions: ['contains', 'startsWith', 'endsWith'],
-        debounceMs: 500,
-        caseSensitive: false
-      } as ITextFilterParams,
-      floatingFilter: true,
-      floatingFilterComponentParams: {
-        debounceMs: 500
-      }
-    },
-    {
-      headerName: 'File Name',
-      field: 'fileName',
-      flex: 1,
-      filter: 'agTextColumnFilter',
-      filterParams: {
-        filterOptions: ['contains', 'startsWith', 'endsWith'],
-        debounceMs: 500,
-        caseSensitive: false
-      } as ITextFilterParams,
-      floatingFilter: true,
-      floatingFilterComponentParams: {
-        debounceMs: 500
-      }
-    },
-    {
-      headerName: 'Type',
-      field: 'fileType',
-      width: 100,
-      filter: 'agSetColumnFilter',
-      filterParams: {
-        values: ['pdf', 'docx', 'xlsx', 'jpg', 'png'],
-        refreshValuesOnOpen: true
-      },
-      floatingFilter: true
-    },
-    {
-      headerName: 'Size',
-      field: 'fileSize',
-      width: 120,
-      cellRenderer: FileSizeCellRenderer,
-      filter: 'agNumberColumnFilter',
-      filterParams: {
-        debounceMs: 500
-      },
-      floatingFilter: true,
-      comparator: (valueA: number, valueB: number) => valueA - valueB
-    },
-    {
-      headerName: 'Modified',
-      field: 'dateModified',
-      width: 130,
-      filter: 'agDateColumnFilter',
-      filterParams: {
-        debounceMs: 500
-      },
-      floatingFilter: true
-    }
-  ], []);
-
-  // Grid options with proper context management
-  const gridOptions = useMemo(() => ({
-    rowSelection: undefined, // Disable built-in selection
-    suppressRowClickSelection: true, // Prevent default row selection
-    
-    // Performance optimizations
-    rowBuffer: 10,
-    suppressRowVirtualisation: false,
-    cacheQuickFilter: true,
-    debounceVerticalScrollbar: true,
-    animateRows: false,
-    suppressColumnMoveAnimation: true,
-    
-    // Advanced filtering - disable by default, only show when button clicked
-    enableAdvancedFilter: false,
-    
-    // Floating filters
-    floatingFilter: true,
-    
-    // Default column properties
-    defaultColDef: {
-      sortable: true,
-      resizable: true,
-      filter: true
-    },
-
-    // Row ID for tracking - essential for proper selection management
-    getRowId: (params: any) => params.data.id,
-    
-    // Enable cell text selection
-    enableCellTextSelection: false
-  }), []);
-
   // Update grid context when selection state changes - with immediate refresh
   useEffect(() => {
     if (gridApi) {
@@ -625,6 +811,11 @@ export const DocumentSelectorGrid: React.FC = () => {
   const onCellClicked = useCallback((event: CellClickedEvent) => {
     if (event.colDef.field === 'select') {
       // Selection handled by cell renderer
+      return;
+    }
+    
+    // Don't set cursor on folder clicks in tree view
+    if (event.node.group) {
       return;
     }
     
@@ -739,6 +930,26 @@ export const DocumentSelectorGrid: React.FC = () => {
               className="pl-10"
             />
           </div>
+          
+          {/* View Toggle Button */}
+          <Button
+            variant="outline"
+            onClick={toggleViewMode}
+            className="flex items-center gap-2"
+          >
+            {viewMode === 'table' ? (
+              <>
+                <TreePine className="h-4 w-4" />
+                Tree View
+              </>
+            ) : (
+              <>
+                <Table className="h-4 w-4" />
+                Table View
+              </>
+            )}
+          </Button>
+          
           <Button
             variant="outline"
             onClick={toggleAdvancedFilter}
@@ -755,17 +966,25 @@ export const DocumentSelectorGrid: React.FC = () => {
           </Button>
         </div>
         
-        {/* Multi-select mode indicator */}
-        {isMultiSelectMode && (
-          <div className="mb-2">
+        {/* View mode indicator */}
+        <div className="mb-2 flex items-center gap-2">
+          <Badge
+            variant="outline"
+            className="bg-gray-100 text-gray-700"
+          >
+            {viewMode === 'table' ? 'Table View' : 'Tree View'}
+          </Badge>
+          
+          {/* Multi-select mode indicator */}
+          {isMultiSelectMode && (
             <Badge
               variant="secondary"
               className="bg-blue-600 text-white text-xs"
             >
               MULTI-SELECT MODE
             </Badge>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Keyboard Instructions */}
         <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs text-blue-700 mb-2">
@@ -778,7 +997,7 @@ export const DocumentSelectorGrid: React.FC = () => {
             <span><kbd>Ctrl+A</kbd> select all</span>
           </div>
           <div className="mt-1 text-xs text-blue-600">
-            💡 Order numbers reflect selection sequence: Shift+Down = 1,2,3... | Shift+Up = 1,2,3... (anchor first)
+            💡 {viewMode === 'tree' ? 'Tree View: Only files can be selected, folders are for organization' : 'Table View: All files can be selected'} | Order numbers reflect selection sequence
           </div>
         </div>
         
@@ -787,58 +1006,9 @@ export const DocumentSelectorGrid: React.FC = () => {
           {getSearchHint()}
         </div>
         
-        {/* Debug info for development */}
-        {globalSearch && (
-          <div className="space-y-1">
-            <div className="text-xs text-purple-600">
-              Search Type: {getParsedSearchInfo()?.searchType || 'none'} 
-              {getParsedSearchInfo()?.pathQuery && ` | Path: "${getParsedSearchInfo()?.pathQuery}"`}
-              {getParsedSearchInfo()?.fileNameQuery && ` | Filename: "${getParsedSearchInfo()?.fileNameQuery}"`}
-              {getParsedSearchInfo()?.hasWildcard && ' | Has Wildcard'}
-            </div>
-          </div>
-        )}
-        
-        {/* Selection summary with chronological order debugging */}
+        {/* Selection summary */}
         {selectedFiles.length > 0 && (
           <div className="mt-2 space-y-1">
-            {/* <div className="text-sm text-blue-600">
-              {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
-              {rangeAnchor && ` | Anchor: ${rangeAnchor.slice(-6)}`}
-            </div>
-            
-            Enhanced debug info showing chronological selection order
-            <div className="text-xs text-gray-500">
-              Selection Order: {selectedFiles
-                .sort((a, b) => a.order - b.order)
-                .map(s => `${s.order}→${s.item.id.slice(-6)}`)
-                .join(' → ')}
-            </div> */}
-            
-            {/* Show chronological selection sequence */}
-            {/* <div className="text-xs text-purple-600">
-              Chronological: {selectedFiles
-                .sort((a, b) => a.order - b.order)
-                .map(s => `${s.order}.${s.item.fileName.slice(0, 12)}`)
-                .join(' → ')}
-            </div> */}
-            
-            {/* Show visual grid positions for comparison */}
-            {/* <div className="text-xs text-orange-600">
-              Grid Positions: {selectedFiles
-                .sort((a, b) => {
-                  // Sort by actual grid position for comparison
-                  if (!gridApi) return 0;
-                  const allNodes: any[] = [];
-                  gridApi.forEachNodeAfterFilterAndSort(node => allNodes.push(node));
-                  const aIndex = allNodes.findIndex(node => node.data.id === a.item.id);
-                  const bIndex = allNodes.findIndex(node => node.data.id === b.item.id);
-                  return aIndex - bIndex;
-                })
-                .map((s, visualIndex) => `${visualIndex + 1}.${s.item.fileName.slice(0, 8)}(${s.order})`)
-                .join(' → ')}
-            </div> */}
-            
             {/* Bulk Actions */}
             <div className="flex gap-2">
               <Button
@@ -866,20 +1036,23 @@ export const DocumentSelectorGrid: React.FC = () => {
       <div className="flex-1 ag-theme-alpine">
         <AgGridReact
           ref={gridRef}
-          rowData={rowData}
-          columnDefs={columnDefs}
+          rowData={generateSampleData()}
+          columnDefs={currentColumnDefs}
           gridOptions={gridOptions}
           onGridReady={onGridReady}
           onCellClicked={onCellClicked}
           suppressMenuHide={true}
           enableCellTextSelection={false}
+          treeData = {viewMode == 'tree'? true:false}
+          groupDefaultExpanded={-1}
+          getDataPath={(data) =>  data.filePath.split("/").slice(1)}
           theme="legacy"
         />
       </div>
 
       {/* Selection Details - Chronological Order */}
       {selectedFiles.length > 0 && (
-        <div className="p-4 border-t bg-gray-50 max-h-12 overflow-y-auto">
+        <div className="p-4 border-t bg-gray-50 max-h-32 overflow-y-auto">
           <h3 className="font-medium mb-2">Selected Files (chronological order):</h3>
           <div className="space-y-1">
             {getOrderedSelections().map((file, index) => {
@@ -899,7 +1072,7 @@ export const DocumentSelectorGrid: React.FC = () => {
                   <span className="text-gray-500 text-xs">{file.filePath}</span>
                 </div>
               );
-            })}
+            })} 
           </div>
         </div>
       )}

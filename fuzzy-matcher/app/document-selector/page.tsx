@@ -1,173 +1,100 @@
-// app/document-selector/page.tsx
-'use client'
+"use client";
+import { useMemo } from "react";
+import { AgGridReact } from "ag-grid-react";
+import "ag-grid-community/styles/ag-grid.css";
+import "ag-grid-community/styles/ag-theme-alpine.css";
 
-import React from 'react';
-import { DocumentSelectorGrid } from '@/components/document-selector';
+import { Button } from "@/components/ui/button";
+import { ModuleRegistry } from 'ag-grid-community'; 
+import { AllEnterpriseModule } from 'ag-grid-enterprise';
 
-export default function DocumentSelectorPage() {
+// Register all Community and Enterprise features
+ModuleRegistry.registerModules([AllEnterpriseModule]);
+
+const fileData = [
+  { path: "/contracts/legal/service-agreement-2024.pdf", type: "pdf", size: 1024000 },
+  { path: "/contracts/legal/nda-template.docx", type: "docx", size: 512000 },
+  { path: "/contracts/vendor/software-license.pdf", type: "pdf", size: 768000 },
+  { path: "/exhibits/evidence/witness-statement-1.pdf", type: "pdf", size: 2048000 },
+  { path: "/exhibits/evidence/witness-statement-2.pdf", type: "pdf", size: 1536000 },
+  { path: "/exhibits/photos/accident-scene.jpg", type: "jpg", size: 3072000 },
+  { path: "/exhibits/photos/damage-assessment.jpg", type: "jpg", size: 2560000 },
+  { path: "/reports/financial/quarterly-report-q1.xlsx", type: "xlsx", size: 768000 },
+  { path: "/reports/financial/quarterly-report-q2.xlsx", type: "xlsx", size: 832000 },
+  { path: "/reports/technical/system-analysis.docx", type: "docx", size: 1024000 },
+  { path: "/correspondence/client/agreement-draft.docx", type: "docx", size: 256000 },
+  { path: "/correspondence/client/agreement-final.pdf", type: "pdf", size: 1280000 },
+  { path: "/correspondence/vendor/proposal-request.pdf", type: "pdf", size: 640000 },
+  { path: "/discovery/documents/exhibit-a-contract.pdf", type: "pdf", size: 1792000 },
+  { path: "/discovery/documents/exhibit-b-correspondence.pdf", type: "pdf", size: 640000 },
+  { path: "/discovery/documents/exhibit-c-financial.xlsx", type: "xlsx", size: 896000 },
+  { path: "/discovery/depositions/witness-a.pdf", type: "pdf", size: 3200000 },
+  { path: "/pleadings/motions/motion-to-dismiss.pdf", type: "pdf", size: 1152000 },
+  { path: "/pleadings/briefs/opening-brief.docx", type: "docx", size: 2304000 },
+  { path: "/transcripts/depositions/witness-deposition-smith.pdf", type: "pdf", size: 4096000 },
+  { path: "/transcripts/hearings/preliminary-hearing.pdf", type: "pdf", size: 3584000 },
+];
+
+function buildTreeData() {
+  return fileData.map(({ path, ...rest }) => {
+    const parts = path.split("/").filter(Boolean);
+    const fileName = parts.pop() || ""; // Ensure it's never undefined
+    return {
+      fileName,
+      folderHierarchy: parts,
+      ...rest,
+    };
+  });
+}
+
+
+export default function FileTreeGrid() {
+  const rowData = useMemo(() => buildTreeData(), []);
+
+  const columnDefs: ColDef<typeof rowData[number]>[] = useMemo(() => [
+  {
+    field: "fileName",
+    headerName: "Name",
+    cellRenderer: "agGroupCellRenderer",
+    flex: 2,
+  },
+  { field: "type", flex: 1 },
+  {
+    field: "size",
+    flex: 1,
+    valueFormatter: ({ value }) => `${(value / 1024 / 1024).toFixed(2)} MB`,
+  },
+  {
+    headerName: "Action",
+    field: "action", // dummy field to satisfy typing
+    cellRenderer: (params) =>
+      params.node.group ? "" : <Button>Select</Button>,
+    flex: 1,
+  },
+], []);
+
+
+  const autoGroupColumnDef = useMemo(() => {
+    return {
+      headerName: "Path",
+      cellRendererParams: {
+        suppressCount: true,
+      },
+    };
+  }, []);
+
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Page Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="py-6">
-            <h1 className="text-3xl font-bold text-gray-900">
-              Document Selector with AG Grid
-            </h1>
-            <p className="mt-2 text-lg text-gray-600">
-              Intuitive document search with slash delimiter parsing and wildcard sorting
-            </p>
-          </div>
-        </div>
-      </header>
-
-      {/* Feature Overview */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Search Features</h2>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="space-y-2">
-              <h3 className="font-medium text-blue-600">Default File Search</h3>
-              <p className="text-sm text-gray-600">
-                Type "agreement" to search file names containing "agreement"
-              </p>
-              <code className="text-xs bg-gray-100 px-2 py-1 rounded">agreement</code>
-            </div>
-            <div className="space-y-2">
-              <h3 className="font-medium text-green-600">Path/File Search</h3>
-              <p className="text-sm text-gray-600">
-                Use "/" to search path and filename separately
-              </p>
-              <code className="text-xs bg-gray-100 px-2 py-1 rounded">contracts/agreement</code>
-            </div>
-            <div className="space-y-2">
-              <h3 className="font-medium text-purple-600">Wildcard Sorting</h3>
-              <p className="text-sm text-gray-600">
-                Add "*" to search and sort results by filename
-              </p>
-              <code className="text-xs bg-gray-100 px-2 py-1 rounded">exhibit *</code>
-            </div>
-            <div className="space-y-2">
-              <h3 className="font-medium text-orange-600">Combined Search</h3>
-              <p className="text-sm text-gray-600">
-                Combine path, filename, and sorting
-              </p>
-              <code className="text-xs bg-gray-100 px-2 py-1 rounded">discovery/exhibit *</code>
-            </div>
-          </div>
-        </div>
-
-        {/* Usage Examples */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
-          <h2 className="text-lg font-semibold text-blue-800 mb-4">Search Examples</h2>
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <h3 className="font-medium mb-3">Basic Search Examples:</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-3">
-                  <code className="bg-white px-2 py-1 rounded text-blue-700 min-w-[120px]">agreement</code>
-                  <span className="text-gray-600">→ Files containing "agreement"</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <code className="bg-white px-2 py-1 rounded text-blue-700 min-w-[120px]">witness</code>
-                  <span className="text-gray-600">→ Files containing "witness"</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <code className="bg-white px-2 py-1 rounded text-blue-700 min-w-[120px]">exhibit *</code>
-                  <span className="text-gray-600">→ Files with "exhibit" sorted by name</span>
-                </div>
-              </div>
-            </div>
-            <div>
-              <h3 className="font-medium mb-3">Path/File Search Examples:</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-3">
-                  <code className="bg-white px-2 py-1 rounded text-blue-700 min-w-[120px]">contracts/</code>
-                  <span className="text-gray-600">→ All files in contracts folder</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <code className="bg-white px-2 py-1 rounded text-blue-700 min-w-[120px]">exhibits/witness</code>
-                  <span className="text-gray-600">→ "witness" files in exhibits folder</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <code className="bg-white px-2 py-1 rounded text-blue-700 min-w-[120px]">discovery/exhibit *</code>
-                  <span className="text-gray-600">→ "exhibit" files in discovery, sorted</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Instructions */}
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 mb-8">
-          <h2 className="text-lg font-semibold text-amber-800 mb-4">How to Use</h2>
-          <div className="space-y-3 text-sm">
-            <div className="flex items-start gap-3">
-              <span className="bg-amber-500 text-white text-xs px-2 py-1 rounded-full min-w-[20px] h-5 flex items-center justify-center">1</span>
-              <div>
-                <strong>Global Search:</strong> Use the main search box at the top for intelligent parsing
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="bg-amber-500 text-white text-xs px-2 py-1 rounded-full min-w-[20px] h-5 flex items-center justify-center">2</span>
-              <div>
-                <strong>Column Filters:</strong> Use individual column filters for granular searching
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="bg-amber-500 text-white text-xs px-2 py-1 rounded-full min-w-[20px] h-5 flex items-center justify-center">3</span>
-              <div>
-                <strong>Advanced Filter:</strong> Click "Advanced" button for complex multi-column expressions
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="bg-amber-500 text-white text-xs px-2 py-1 rounded-full min-w-[20px] h-5 flex items-center justify-center">4</span>
-              <div>
-                <strong>Selection:</strong> Use checkboxes to select multiple documents
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Document Grid */}
-        <div className="bg-white rounded-lg shadow-sm" style={{ height: '700px' }}>
-          <DocumentSelectorGrid />
-        </div>
-
-        {/* Technical Details */}
-        <div className="mt-8 bg-gray-50 rounded-lg p-6">
-          <h2 className="text-lg font-semibold mb-4">Technical Implementation</h2>
-          <div className="grid md:grid-cols-3 gap-6 text-sm">
-            <div>
-              <h3 className="font-medium mb-2">Search Parser</h3>
-              <ul className="space-y-1 text-gray-600">
-                <li>• Slash delimiter detection</li>
-                <li>• Wildcard pattern recognition</li>
-                <li>• Automatic filter model generation</li>
-                <li>• Sort model creation for wildcards</li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-medium mb-2">AG Grid Features</h3>
-              <ul className="space-y-1 text-gray-600">
-                <li>• Floating filters on all columns</li>
-                <li>• Advanced filter builder</li>
-                <li>• Multi-row selection</li>
-                <li>• Debounced filtering (300ms)</li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-medium mb-2">Performance</h3>
-              <ul className="space-y-1 text-gray-600">
-                <li>• Row virtualization</li>
-                <li>• Filter result caching</li>
-                <li>• Optimized rendering</li>
-                <li>• Minimal re-renders</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </main>
+    <div className=" ag-theme-alpine w-full h-[800px]">
+      <AgGridReact
+        theme='legacy'
+        rowData={rowData}
+        columnDefs={columnDefs}
+        groupDefaultExpanded={-1}
+        treeData={true}
+        animateRows={true}
+        autoGroupColumnDef={autoGroupColumnDef}
+        getDataPath={(data) => [...data.folderHierarchy, data.fileName]}
+      />
     </div>
   );
 }

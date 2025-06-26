@@ -31,7 +31,7 @@ export default function TestDocumentSelectorPage() {
           </div>
         </div>
         
-        <div className="bg-white rounded-lg shadow" style={{ height: '600px' }}>
+        <div className="bg-white rounded-lg shadow" style={{ height: '100vh' }}>
           <DocumentSelectorGrid />
         </div>
       </div>
