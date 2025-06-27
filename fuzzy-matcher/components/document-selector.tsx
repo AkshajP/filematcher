@@ -115,17 +115,50 @@ const buildTreeData = (files: DocumentFile[]): TreeDataFile[] => {
   });
 };
 
-// Custom Selection Cell Renderer for both views
+
 const SelectionCellRenderer = (props: any) => {
   const { data, node, api } = props;
   
-  // Don't show selection for group nodes (folders) in tree view
-  if (node.group) return null;
-  if (!data) return null;
+  if (!node) return null;
   
   // Get the current context from the grid API
   const gridContext = api.getGridOption('context');
-  const { selectedFiles, cursorRowId, onToggleSelection } = gridContext || {};
+  const { selectedFiles, cursorRowId, onToggleSelection, onToggleFolderSelection, viewMode } = gridContext || {};
+  
+  // Handle folder nodes (groups) in tree view
+  if (node.group && viewMode === 'tree') {
+    const folderPath = node.key;
+    const folderSelectionState = getFolderSelectionState(folderPath, selectedFiles, api);
+    
+    const handleFolderClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (onToggleFolderSelection) {
+        onToggleFolderSelection(folderPath, folderSelectionState);
+      }
+    };
+    
+    return (
+      <div 
+        className="flex items-center justify-center h-full w-full cursor-pointer hover:bg-gray-50"
+        onClick={handleFolderClick}
+      >
+        {folderSelectionState === 'all' ? (
+          <div className="w-4 h-4 border-2 border-blue-500 bg-blue-500 rounded flex items-center justify-center">
+            <span className="text-white text-xs">✓</span>
+          </div>
+        ) : folderSelectionState === 'some' ? (
+          <div className="w-4 h-4 border-2 border-blue-500 bg-blue-500 rounded flex items-center justify-center">
+            <span className="text-white text-xs">-</span>
+          </div>
+        ) : (
+          <div className="w-4 h-4 border-2 border-gray-300 rounded hover:border-gray-400 transition-colors"></div>
+        )}
+      </div>
+    );
+  }
+  
+  // Handle file nodes
+  if (!data) return null;
   
   // Find if this item is selected
   const selection = selectedFiles?.find((sel: OrderedSelection) => sel.item.id === data.id);
@@ -591,9 +624,8 @@ export const DocumentSelectorGrid: React.FC = () => {
 
   // Grid options with view-specific configurations
   const gridOptions = useMemo(() => ({
-    rowSelection: undefined, // Disable built-in selection
+    // rowSelection: undefined, // Disable built-in selection
     suppressRowClickSelection: true, // Prevent default row selection
-    
     // Tree data specific options
     treeData: viewMode === 'tree',
     getDataPath: viewMode === 'tree' ? (data: TreeDataFile) => {
@@ -631,7 +663,7 @@ export const DocumentSelectorGrid: React.FC = () => {
     getRowId: (params: any) => params.data.id,
     
     // Enable cell text selection
-    enableCellTextSelection: false
+    enableCellTextSelection: true
   }), [viewMode, autoGroupColumnDef]);
 
   // Get current column definitions based on view mode
@@ -915,6 +947,7 @@ export const DocumentSelectorGrid: React.FC = () => {
       .sort((a, b) => a.order - b.order)  // Sort by selection order, not visual position
       .map(selection => selection.item);
   };
+
 
   return (
     <div className="w-full h-full flex flex-col bg-white">
