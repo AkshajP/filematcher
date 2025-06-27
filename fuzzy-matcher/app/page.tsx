@@ -6,11 +6,13 @@ import { WorkflowHeader } from '@/components/workflow-header';
 import { FileReferences } from '@/components/file-references';
 import { NewDocumentSelector } from '@/components/new-document-selector';
 import { MatchedPairs } from '@/components/matched-pairs';
+import { ImportValidationDialog } from '@/components/import-validation-dialog';
 import { Badge } from '@/components/ui/badge';
 import { FileReference, MatchedPair, generateUniqueId } from '@/lib/types';
 import { loadFromFolder } from '@/lib/data-loader';
 import { importReferencesFromFile, downloadReferenceTemplate } from '@/lib/reference-loader';
 import { exportMappingsWithMetadata } from '@/lib/export-manager';
+import { parseExportedCSV, validateImportedMappingsAgainstCurrentState, applyImportedMappings, ImportValidationResult, ImportOptions } from '@/lib/import-manager';
 
 interface OrderedSelection {
   item: DocumentFile;
@@ -52,6 +54,15 @@ export default function NewMapperPage() {
   const [isResizing, setIsResizing] = useState<boolean>(false);
   const [startX, setStartX] = useState<number>(0);
   const [startWidth, setStartWidth] = useState<number>(33);
+
+  // Import state management
+  const [importDialog, setImportDialog] = useState<{
+    isOpen: boolean;
+    validationResult?: ImportValidationResult;
+    awaitingFolder?: boolean;
+    pendingImportData?: unknown;
+    isProcessing?: boolean;
+  }>({ isOpen: false });
 
   // Workflow status tracking
   const indexStatus = {
@@ -383,9 +394,105 @@ export default function NewMapperPage() {
     // TODO: Implement auto-match functionality
   };
 
-  const handleImportMappings = () => {
-    console.log('Import mappings functionality not implemented yet');
-    // TODO: Implement import mappings functionality
+  const handleImportMappings = async (files: FileList) => {
+    try {
+      const file = files[0];
+      const { metadata, mappings, errors } = await parseExportedCSV(file);
+      
+      if (errors.length > 0) {
+        console.warn('CSV parsing errors:', errors);
+        if (mappings.length === 0) {
+          alert(`Failed to parse mappings file:\n${errors.join('\n')}`);
+          return;
+        }
+      }
+
+      if (mappings.length === 0) {
+        alert('No valid mappings found in the file.');
+        return;
+      }
+
+      if (documentFiles.length === 0 || fileReferences.length === 0) {
+        alert('Please first upload both:\n1. Your client index (Upload Index)\n2. Your folder structure (Upload Folder)\n\nThen try importing mappings again.');
+        return;
+      }
+
+      // Convert documentFiles back to filePaths for validation
+      const filePaths = documentFiles.map(doc => doc.filePath);
+
+      const validationResult = validateImportedMappingsAgainstCurrentState(
+        mappings, 
+        fileReferences, 
+        filePaths, 
+        metadata
+      );
+      
+      setImportDialog({
+        isOpen: true,
+        validationResult
+      });
+    } catch (error) {
+      console.error('Failed to import mappings:', error);
+      alert(`Failed to import mappings: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleImportConfirm = async (options: ImportOptions) => {
+    if (!importDialog.validationResult) return;
+
+    try {
+      setImportDialog(prev => ({ ...prev, isProcessing: true }));
+
+      const filePaths = documentFiles.map(doc => doc.filePath);
+      const { mappingsToImport, referencesToRestore, usedFilePaths } = applyImportedMappings(
+        importDialog.validationResult.mappings,
+        filePaths,
+        options,
+        importDialog.validationResult
+      );
+
+      // Apply imported mappings to current state
+      setMatchedPairs(prev => [...prev, ...mappingsToImport]);
+      
+      // Restore missing references if any
+      if (referencesToRestore.length > 0) {
+        setFileReferences(prev => [...prev, ...referencesToRestore.map(ref => ({
+          ...ref,
+          id: generateUniqueId()
+        }))]);
+      }
+
+      console.log(`Imported ${mappingsToImport.length} mappings and restored ${referencesToRestore.length} missing references`);
+      
+      setImportDialog({ isOpen: false });
+      
+      let message = `Successfully imported ${mappingsToImport.length} mappings`;
+      if (referencesToRestore.length > 0) {
+        message += ` and restored ${referencesToRestore.length} missing references`;
+      }
+      alert(message + '.');
+    } catch (error) {
+      console.error('Failed to apply import:', error);
+      alert(`Failed to apply import: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setImportDialog(prev => ({ ...prev, isProcessing: false }));
+    }
+  };
+
+  const handleImportCancel = () => {
+    setImportDialog({ isOpen: false });
+  };
+
+  const handleImportMappingsWorkflow = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = (e) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (files && files.length > 0) {
+        handleImportMappings(files);
+      }
+    };
+    input.click();
   };
 
   const handleExport = () => {
@@ -524,7 +631,7 @@ export default function NewMapperPage() {
         }}
         onDownloadTemplate={handleDownloadTemplate}
         onStartAutoMatch={handleStartAutoMatch}
-        onImportMappings={handleImportMappings}
+        onImportMappings={handleImportMappingsWorkflow}
         onExport={handleExport}
         mappingProgress={{
           completed: matchedPairs.length,
@@ -627,6 +734,16 @@ export default function NewMapperPage() {
           </div>
         )}
       </div>
+
+      {/* Import Validation Dialog */}
+      {importDialog.isOpen && importDialog.validationResult && (
+        <ImportValidationDialog
+          validationResult={importDialog.validationResult}
+          onImport={handleImportConfirm}
+          onCancel={handleImportCancel}
+          isLoading={importDialog.isProcessing}
+        />
+      )}
     </div>
   );
 }
