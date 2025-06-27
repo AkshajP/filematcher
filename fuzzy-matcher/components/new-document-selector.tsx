@@ -22,11 +22,12 @@ import {
   GridApi, 
   ITextFilterParams,
   CellClickedEvent,
+  RowNode,
 } from 'ag-grid-community';
 
 // Import styles
 import 'ag-grid-community/styles/ag-grid.css';
-import 'ag-grid-community/styles/ag-theme-alpine.css';
+import 'ag-grid-community/styles/ag-theme-balham.css';
 
 import { AGGridSearchParser } from '@/lib/ag-grid-search-utils';
 
@@ -78,13 +79,79 @@ const SelectionCellRenderer = (props: any) => {
   
   // Get the current context from the grid API
   const gridContext = api.getGridOption('context');
-  const { selectedFiles, cursorRowId, onToggleSelection, viewMode } = gridContext || {};
+  const { selectedFiles, cursorRowId, onToggleSelection, onToggleFolderSelection, viewMode } = gridContext || {};
+  
+  // Debug logging for context
+  console.log('SelectionCellRenderer context:', {
+    hasToggleSelection: !!onToggleSelection,
+    hasToggleFolderSelection: !!onToggleFolderSelection,
+    viewMode,
+    isGroupNode: node.group
+  });
   
   // Handle folder nodes (groups) in tree view
   if (node.group && viewMode === 'tree') {
+    // Get child files using AG Grid's tree node structure
+    const childFiles: any[] = [];
+    
+    // Use AG Grid's forEachNode to get all descendant file nodes
+    const collectChildFiles = (currentNode: any) => {
+      if (currentNode.childrenAfterGroup) {
+        currentNode.childrenAfterGroup.forEach((child: any) => {
+          if (child.group) {
+            // Recursively collect from child folders
+            collectChildFiles(child);
+          } else if (child.data && !child.group) {
+            // This is a file node
+            childFiles.push(child.data);
+          }
+        });
+      }
+    };
+    
+    collectChildFiles(node);
+    
+    console.log('Folder node:', node.key, 'Child files found:', childFiles.length, childFiles.map(f => f.fileName));
+    
+    const selectedChildFiles = childFiles.filter(file => 
+      selectedFiles?.some((sel: OrderedSelection) => sel.item.id === file.id)
+    );
+    
+    const isFullySelected = childFiles.length > 0 && selectedChildFiles.length === childFiles.length;
+    const isPartiallySelected = selectedChildFiles.length > 0 && selectedChildFiles.length < childFiles.length;
+    const isUnselected = selectedChildFiles.length === 0;
+    
+    const handleFolderClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      console.log('Folder click handler called:', node.key, 'Has handler:', !!onToggleFolderSelection);
+      console.log('Full context object:', gridContext);
+      if (onToggleFolderSelection && childFiles.length > 0) {
+        onToggleFolderSelection(node, childFiles);
+      } else {
+        console.log('Cannot select folder - no handler or no files:', {
+          hasHandler: !!onToggleFolderSelection,
+          fileCount: childFiles.length,
+          contextKeys: Object.keys(gridContext || {})
+        });
+      }
+    };
+    
     return (
-      <div className="flex items-center justify-center h-full w-full">
-        <div className="w-4 h-4 border-2 border-gray-300 rounded opacity-50"></div>
+      <div 
+        className="flex items-center justify-center h-full w-full cursor-pointer hover:bg-gray-50 transition-colors"
+        onClick={handleFolderClick}
+      >
+        {isFullySelected ? (
+          <div className="bg-emerald-700 text-white w-4 h-4 rounded flex items-center justify-center border-2 border-emerald-800">
+            <span className="text-xs font-bold">✓</span>
+          </div>
+        ) : isPartiallySelected ? (
+          <div className="bg-blue-500 text-white w-4 h-4 rounded flex items-center justify-center border-2 border-blue-600">
+            <span className="text-xs font-bold">−</span>
+          </div>
+        ) : (
+          <div className="w-4 h-4 border-2 border-gray-300 rounded hover:border-gray-400 transition-colors"></div>
+        )}
       </div>
     );
   }
@@ -279,6 +346,34 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       setRangeAnchor(item.id);
     }
   }, [selectedDocuments, rangeAnchor, onSelectionChange]);
+
+    const toggleFolderSelection = useCallback((folderNode: RowNode, childFiles: DocumentFile[]) => {
+        const childFileIds = new Set(childFiles.map(f => f.id));
+
+        // Find which of the currently selected files are children of this folder
+        const selectedChildren = selectedDocuments.filter(sel => childFileIds.has(sel.item.id));
+
+        // If all or some children are selected, the action is to deselect them all.
+        // Otherwise (if no children are selected), the action is to select them all.
+        if (selectedChildren.length > 0) {
+            // DESELECT: Filter out all files that belong to this folder
+            const newSelections = selectedDocuments.filter(sel => !childFileIds.has(sel.item.id));
+            onSelectionChange(newSelections);
+        } else {
+            // SELECT: Add all children from this folder to the selection
+            // First, take the selections that are NOT in the current folder
+            const existingSelections = selectedDocuments.filter(sel => !childFileIds.has(sel.item.id));
+
+            // Create new selections for the folder's children, starting the order number
+            // after the existing selections.
+            const newChildSelections = childFiles.map((file, index) => ({
+                item: file,
+                order: existingSelections.length + index + 1
+            }));
+
+            onSelectionChange([...existingSelections, ...newChildSelections]);
+        }
+    }, [selectedDocuments, onSelectionChange]);   
 
   // Range selection with chronological order
   const handleRangeSelection = useCallback((startId: string, endId: string) => {
@@ -530,18 +625,19 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
     return viewMode === 'tree' ? treeColumnDefs : tableColumnDefs;
   }, [viewMode, treeColumnDefs, tableColumnDefs]);
 
-  // Update grid context when selection state changes
   useEffect(() => {
     if (gridApi) {
+      // *** FIX: Pass the new toggleFolderSelection function in the context ***
       const newContext = {
         selectedFiles: selectedDocuments,
         cursorRowId,
         onToggleSelection: toggleSelection,
+        onToggleFolderSelection: toggleFolderSelection, // <-- ADDED
         viewMode
       };
-      
+
       gridApi.setGridOption('context', newContext);
-      
+
       // Force immediate refresh of the selection column
       setTimeout(() => {
         gridApi.refreshCells({
@@ -550,36 +646,40 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
         });
       }, 0);
     }
-  }, [gridApi, selectedDocuments, cursorRowId, toggleSelection, viewMode]);
+    // *** FIX: Add toggleFolderSelection to the dependency array
+  }, [gridApi, selectedDocuments, cursorRowId, toggleSelection, toggleFolderSelection, viewMode]);
 
   // Handle grid ready
   const onGridReady = useCallback((params: GridReadyEvent) => {
     setGridApi(params.api);
-    
+
     if (documentFiles.length > 0) {
       setCursorRowId(documentFiles[0].id);
     }
-    
+
+    // *** FIX: Add toggleFolderSelection to the initial context ***
     const initialContext = {
       selectedFiles: selectedDocuments,
       cursorRowId: documentFiles[0]?.id || null,
       onToggleSelection: toggleSelection,
+      onToggleFolderSelection: toggleFolderSelection, // <-- ADDED
       viewMode
     };
-    
+
     params.api.setGridOption('context', initialContext);
-  }, [documentFiles, selectedDocuments, toggleSelection, viewMode]);
+  }, [documentFiles, selectedDocuments, toggleSelection, toggleFolderSelection, viewMode]);
+
 
   // Handle cell clicks
   const onCellClicked = useCallback((event: CellClickedEvent) => {
     if (event.colDef.field === 'select') {
       return;
     }
-    
+
     if (event.node.group) {
       return;
     }
-    
+
     setCursorRowId(event.data.id);
   }, []);
 
@@ -743,7 +843,7 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       </div>
 
       {/* AG Grid */}
-      <div className="flex-1 ag-theme-alpine">
+      <div className="flex-1 ag-theme-balham">
         <AgGridReact
           ref={gridRef}
           rowData={displayData}
