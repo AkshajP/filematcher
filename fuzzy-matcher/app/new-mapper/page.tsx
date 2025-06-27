@@ -1,7 +1,7 @@
 // app/new-mapper/page.tsx
 'use client'
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { FileReferences } from '@/components/file-references';
 import { NewDocumentSelector } from '@/components/new-document-selector';
 import { MatchedPairs } from '@/components/matched-pairs';
@@ -125,6 +125,59 @@ export default function NewMapperPage() {
   const [selectedDocuments, setSelectedDocuments] = useState<OrderedSelection[]>([]);
   const [matchedPairs, setMatchedPairs] = useState<MatchedPair[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('matching');
+  
+  // NEW: Resizable panel state
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(33); // Default 33% width
+  const [isResizing, setIsResizing] = useState<boolean>(false);
+  const [startX, setStartX] = useState<number>(0);
+  const [startWidth, setStartWidth] = useState<number>(33);
+
+  // Get unmatched references for the FileReferences component
+  const unmatchedReferences = useMemo(() => {
+    return fileReferences.filter(ref => 
+      !matchedPairs.some(pair => pair.reference === ref.description)
+    );
+  }, [fileReferences, matchedPairs]);
+
+  // NEW: Filter current selections to only include unmapped references
+  const validSelectedReferences = useMemo(() => {
+    return selectedReferences.filter(sel => 
+      unmatchedReferences.some(ref => ref.id === sel.item.id)
+    );
+  }, [selectedReferences, unmatchedReferences]);
+
+  const validCurrentReference = useMemo(() => {
+    if (!currentReference) return null;
+    return unmatchedReferences.find(ref => ref.id === currentReference.id) || null;
+  }, [currentReference, unmatchedReferences]);
+
+  // NEW: Check if there are any valid references to map
+  const hasValidReferencesToMap = useMemo(() => {
+    return validSelectedReferences.length > 0 || validCurrentReference !== null;
+  }, [validSelectedReferences.length, validCurrentReference]);
+
+  // NEW: Auto-manage state when references become mapped/unmapped
+  React.useEffect(() => {
+    // Clear selected references that are no longer valid
+    if (validSelectedReferences.length !== selectedReferences.length) {
+      setSelectedReferences(validSelectedReferences);
+    }
+    
+    // Handle current reference state changes
+    if (currentReference && !validCurrentReference) {
+      // Current reference became invalid (was mapped) - set to first available or null
+      setCurrentReference(unmatchedReferences[0] || null);
+    } else if (!currentReference && unmatchedReferences.length > 0 && validSelectedReferences.length === 0) {
+      // No current reference but unmapped references are available (e.g., after deleting a mapping)
+      // Auto-set to first unmapped reference to restore mapping interface
+      setCurrentReference(unmatchedReferences[0]);
+    }
+    
+    // Clear document selections when there are no valid references
+    if (!hasValidReferencesToMap && selectedDocuments.length > 0) {
+      setSelectedDocuments([]);
+    }
+  }, [validSelectedReferences, validCurrentReference, hasValidReferencesToMap, selectedReferences, currentReference, unmatchedReferences, selectedDocuments.length]);
 
   // File References handlers
   const handleSelectReference = useCallback((reference: FileReference) => {
@@ -151,18 +204,18 @@ export default function NewMapperPage() {
   }, []);
 
   const handleSelectAllReferences = useCallback(() => {
-    const allSelected = selectedReferences.length === fileReferences.length;
+    const allSelected = selectedReferences.length === unmatchedReferences.length;
     if (allSelected) {
       setSelectedReferences([]);
     } else {
-      const newSelected = fileReferences.map((ref, index) => ({
+      const newSelected = unmatchedReferences.map((ref, index) => ({
         item: ref,
         order: index + 1
       }));
       setSelectedReferences(newSelected);
     }
     setSelectedDocuments([]);
-  }, [selectedReferences.length, fileReferences]);
+  }, [selectedReferences.length, unmatchedReferences]);
 
   const handleBulkSkip = useCallback(() => {
     // TODO: Implement bulk skip logic
@@ -187,10 +240,16 @@ export default function NewMapperPage() {
   }, []);
 
   const handleConfirmMapping = useCallback(() => {
+    // NEW: Only proceed if there are valid references to map
+    if (!hasValidReferencesToMap) {
+      console.log('No valid references to map');
+      return;
+    }
+
     // Create mappings based on current selections
-    if (selectedReferences.length > 0 && selectedDocuments.length > 0) {
+    if (validSelectedReferences.length > 0 && selectedDocuments.length > 0) {
       // Bulk mapping: pair references and documents by order
-      const sortedRefs = selectedReferences.sort((a, b) => a.order - b.order);
+      const sortedRefs = validSelectedReferences.sort((a, b) => a.order - b.order);
       const sortedDocs = selectedDocuments.sort((a, b) => a.order - b.order);
       
       const newMappings: MatchedPair[] = [];
@@ -202,7 +261,7 @@ export default function NewMapperPage() {
           path: sortedDocs[i].item.filePath,
           score: 1.0, // Manual mapping gets perfect score
           timestamp: new Date().toISOString(),
-          method: selectedReferences.length > 1 ? 'manual-bulk' : 'manual',
+          method: validSelectedReferences.length > 1 ? 'manual-bulk' : 'manual',
           originalDate: sortedRefs[i].item.date,
           originalReference: sortedRefs[i].item.reference,
         });
@@ -213,16 +272,16 @@ export default function NewMapperPage() {
       setSelectedDocuments([]);
       
       console.log(`Created ${newMappings.length} new mappings`);
-    } else if (currentReference && selectedDocuments.length === 1) {
+    } else if (validCurrentReference && selectedDocuments.length === 1) {
       // Single mapping
       const newMapping: MatchedPair = {
-        reference: currentReference.description,
+        reference: validCurrentReference.description,
         path: selectedDocuments[0].item.filePath,
         score: 1.0,
         timestamp: new Date().toISOString(),
         method: 'manual',
-        originalDate: currentReference.date,
-        originalReference: currentReference.reference,
+        originalDate: validCurrentReference.date,
+        originalReference: validCurrentReference.reference,
       };
       
       setMatchedPairs(prev => [...prev, newMapping]);
@@ -230,42 +289,99 @@ export default function NewMapperPage() {
       
       console.log('Created single mapping:', newMapping);
     }
-  }, [selectedReferences, selectedDocuments, currentReference]);
+  }, [validSelectedReferences, selectedDocuments, validCurrentReference, hasValidReferencesToMap]);
 
   // Remove matched pair
   const handleRemoveMatch = useCallback((index: number) => {
     setMatchedPairs(prev => prev.filter((_, i) => i !== index));
   }, []);
 
-  // Get unmatched references for the FileReferences component
-  const unmatchedReferences = fileReferences.filter(ref => 
-    !matchedPairs.some(pair => pair.reference === ref.description)
-  );
+  // NEW: Resize handling functions
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setIsResizing(true);
+    setStartX(e.clientX);
+    setStartWidth(leftPanelWidth);
+    e.preventDefault();
+  }, [leftPanelWidth]);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isResizing) return;
+    
+    const deltaX = e.clientX - startX;
+    const containerWidth = window.innerWidth;
+    const newWidthPercent = startWidth + (deltaX / containerWidth) * 100;
+    
+    // Constrain between 20% and 60%
+    const constrainedWidth = Math.min(Math.max(newWidthPercent, 20), 60);
+    setLeftPanelWidth(constrainedWidth);
+  }, [isResizing, startX, startWidth]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  // Add global mouse event listeners for resizing
+  React.useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, handleMouseMove, handleMouseUp]);
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b-2 border-emerald-700 px-8 py-4 shadow-sm">
+      <div className="bg-white border-b-2 border-emerald-700 px-8 py-2 shadow-sm">
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-semibold text-emerald-700">
-            New TERES File Mapper
+            TERES File Mapper
           </h1>
           <div className="flex gap-2">
             <Badge variant="outline">
               {matchedPairs.length} / {fileReferences.length} Mapped
             </Badge>
+            {unmatchedReferences.length === 0 ? (
+              <Badge className="bg-green-100 text-green-800 border-green-300">
+                All Complete!
+              </Badge>
+            ) : (
+              <Badge className="bg-blue-100 text-blue-800 border-blue-300">
+                {unmatchedReferences.length} Remaining
+              </Badge>
+            )}
           </div>
         </div>
       </div>
 
       {/* Main Content */}
       <main className="flex-1 flex overflow-hidden">
-        {/* Left Panel - File References */}
-        <div className="w-1/3 border-r bg-white">
+        {/* Left Panel - File References (Resizable) */}
+        <div 
+          className="bg-white border-r transition-all duration-200 ease-in-out"
+          style={{ 
+            width: `${leftPanelWidth}%`,
+            minWidth: '200px',
+            maxWidth: '800px'
+          }}
+        >
           <FileReferences 
             references={unmatchedReferences}
-            selectedReferences={selectedReferences}
-            currentReference={currentReference}
+            selectedReferences={validSelectedReferences}
+            currentReference={validCurrentReference}
             originalCount={fileReferences.length}
             onSelectReference={handleSelectReference}
             onToggleSelection={handleToggleReferenceSelection}
@@ -276,12 +392,36 @@ export default function NewMapperPage() {
           />
         </div>
 
+        {/* Resize Handle */}
+        <div
+          className={`
+            w-1 bg-gray-200 hover:bg-emerald-400 cursor-col-resize transition-colors duration-200
+            ${isResizing ? 'bg-emerald-500' : ''}
+            flex items-center justify-center relative group
+          `}
+          onMouseDown={handleMouseDown}
+        >
+          {/* Resize handle visual indicator */}
+          <div className="absolute inset-y-0 -left-1 -right-1 flex items-center justify-center">
+            <div className="w-1 h-8 bg-gray-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            </div>
+          </div>
+          
+          {/* Resize tooltip on hover */}
+          <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+            Drag to resize
+          </div>
+        </div>
+
         {/* Right Panel - Tabbed Content */}
-        <div className="flex-1 flex flex-col">
+        <div 
+          className="flex flex-col transition-all duration-200 ease-in-out"
+          style={{ width: `${100 - leftPanelWidth}%` }}
+        >
           {/* Tab Headers */}
           <div className="bg-white border-b flex">
             <button
-              className={`px-6 py-3 font-medium border-b-2 transition-colors ${
+              className={`px-6 py-2 font-medium border-b-2 transition-colors ${
                 activeTab === 'matching'
                   ? 'border-emerald-500 text-emerald-600 bg-emerald-50'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
@@ -289,14 +429,14 @@ export default function NewMapperPage() {
               onClick={() => setActiveTab('matching')}
             >
               Match Mapping
-              {(selectedReferences.length > 0 || currentReference) && (
+              {hasValidReferencesToMap && (
                 <Badge className="ml-2 bg-blue-100 text-blue-800">
-                  {selectedReferences.length > 0 ? selectedReferences.length : 1}
+                  {validSelectedReferences.length > 0 ? validSelectedReferences.length : 1}
                 </Badge>
               )}
             </button>
             <button
-              className={`px-6 py-3 font-medium border-b-2 transition-colors ${
+              className={`px-6 py-2 font-medium border-b-2 transition-colors ${
                 activeTab === 'completed'
                   ? 'border-emerald-500 text-emerald-600 bg-emerald-50'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
@@ -314,14 +454,14 @@ export default function NewMapperPage() {
           <div className="flex-1 overflow-hidden">
             {activeTab === 'matching' ? (
               <div className="h-full flex flex-col">
-                {/* Current References Display */}
-                {(currentReference || selectedReferences.length > 0) && (
-                  <div className="bg-green-50 border-b border-green-200 p-3">
+                {/* NEW: Only show current references display if there are valid references */}
+                {hasValidReferencesToMap ? (
+                  <div className="bg-green-50 border-b border-green-200 p-2">
                     <div className="flex items-center justify-between">
-                      {selectedReferences.length > 0 ? (
+                      {validSelectedReferences.length > 0 ? (
                         (() => {
                           // Find the next reference to map based on selection order
-                          const sortedRefs = selectedReferences.sort((a, b) => a.order - b.order);
+                          const sortedRefs = validSelectedReferences.sort((a, b) => a.order - b.order);
                           const nextRefIndex = selectedDocuments.length; // Next reference to map
                           const nextRef = sortedRefs[nextRefIndex];
                           
@@ -334,34 +474,57 @@ export default function NewMapperPage() {
                           } else {
                             return (
                               <h4 className="text-sm font-semibold text-green-700">
-                                All references mapped
+                                All selected references mapped - confirm to complete
                               </h4>
                             );
                           }
                         })()
-                      ) : currentReference ? (
+                      ) : validCurrentReference ? (
                         <h4 className="text-sm font-semibold text-green-700 flex-1 truncate">
-                          Currently mapping (1) {currentReference.description}
+                          Currently mapping (1) {validCurrentReference.description}
                         </h4>
                       ) : null}
                       
                       <Badge variant="outline" className="bg-blue-100 text-blue-800 text-xs ml-2 flex-shrink-0">
-                        {selectedReferences.length > 0 ? `${selectedReferences.length} selected` : 'Single mode'}
+                        {validSelectedReferences.length > 0 ? `${validSelectedReferences.length} selected` : 'Single mode'}
                       </Badge>
                     </div>
                   </div>
+                ) : (
+                  // NEW: Show completion message when no valid references remain
+                  <div className="bg-emerald-50 border-b border-emerald-200 p-6 text-center">
+                    <h3 className="text-lg font-semibold text-emerald-700 mb-2">
+                      🎉 All References Mapped!
+                    </h3>
+                    <p className="text-sm text-emerald-600">
+                      All {fileReferences.length} references have been successfully mapped to documents.
+                      Check the "Completed Mappings" tab to review your work.
+                    </p>
+                  </div>
                 )}
 
-                {/* Document Selector */}
-                <div className="flex-1">
-                  <NewDocumentSelector
-                    documentFiles={documentFiles}
-                    selectedDocuments={selectedDocuments}
-                    onSelectionChange={handleDocumentSelectionChange}
-                    currentReferences={selectedReferences.length > 0 ? selectedReferences : (currentReference ? [{ item: currentReference, order: 1 }] : [])}
-                    onConfirmMapping={handleConfirmMapping}
-                  />
-                </div>
+                {/* Document Selector - Only show if there are valid references */}
+                {hasValidReferencesToMap ? (
+                  <div className="flex-1">
+                    <NewDocumentSelector
+                      documentFiles={documentFiles}
+                      selectedDocuments={selectedDocuments}
+                      onSelectionChange={handleDocumentSelectionChange}
+                      currentReferences={validSelectedReferences.length > 0 ? validSelectedReferences : (validCurrentReference ? [{ item: validCurrentReference, order: 1 }] : [])}
+                      onConfirmMapping={handleConfirmMapping}
+                      matchedPairs={matchedPairs}
+                    />
+                  </div>
+                ) : (
+                  // NEW: Show placeholder when mapping is complete
+                  <div className="flex-1 flex items-center justify-center bg-gray-50">
+                    <div className="text-center text-gray-500">
+                      <div className="text-6xl mb-4">✅</div>
+                      <h3 className="text-xl font-medium mb-2">Mapping Complete</h3>
+                      <p className="text-sm">No more references to map</p>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <MatchedPairs 
