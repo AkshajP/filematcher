@@ -33,8 +33,8 @@ export function ImportValidationDialog({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full m-4 max-h-[90vh] overflow-hidden">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-scroll">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full m-4 max-h-[90vh] overflow-scroll">
         {/* Header */}
         <div className="bg-emerald-700 text-white p-6">
           <h2 className="text-xl font-semibold flex items-center gap-2">
