@@ -400,7 +400,7 @@ export function FilePaths({
   // Get search hint text
   const getSearchHint = () => {
     if (!globalSearch) {
-      return 'Type to search file names, use "/" for directory/filename (e.g., "documents/agreement")';
+      return 'Types to search file names, use "/" for directory/filename (e.g., "documents/agreement")';
     }
     
     const parsed = FilePathSearchParser.parseSearchInput(globalSearch);

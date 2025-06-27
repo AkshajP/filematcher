@@ -12,6 +12,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { HelpCircle } from "lucide-react";
 
 interface FileReferencesProps {
   references: FileReference[];
@@ -301,59 +302,65 @@ export function FileReferences({
   }, [selectedCount]);
 
   return (
-    <div
-      ref={containerRef}
-      className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-full focus:outline-none focus:ring-2 focus:ring-emerald-500"
-      tabIndex={0}
-    >
-      {/* Header */}
-      <div className="bg-emerald-700 text-white p-4 flex justify-between items-center">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          📋 Client Index References
-          {isMultiSelectMode && (
-            <Badge
-              variant="secondary"
-              className="bg-blue-600 text-white text-xs"
-            >
-              MULTI-SELECT
-            </Badge>
-          )}
-        </h2>
-        <div className="flex items-center gap-3">
-          <Checkbox
-            checked={allSelected}
-            onCheckedChange={onSelectAll}
-            className="data-[state=checked]:bg-white data-[state=checked]:text-emerald-700"
-          />
-          <Badge variant="secondary" className="bg-white/20 text-white">
-            {selectedCount} selected
-          </Badge>
-        </div>
-      </div>
-
+   <div
+  ref={containerRef}
+  className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-full focus:outline-none focus:ring-2 focus:ring-emerald-500"
+  tabIndex={0}
+>
+  {/* Header */}
+  <div className="bg-emerald-700 text-white px-4 py-2 flex justify-between items-center relative">
+    <h2 className="text-lg font-semibold flex items-center gap-2">
+      📋 Client Index References
+      {isMultiSelectMode && (
+        <Badge
+          variant="secondary"
+          className="bg-blue-600 text-white text-xs"
+        >
+          MULTI-SELECT
+        </Badge>
+      )}
+    </h2>
+    <div className="flex items-center gap-3">
+      {/* <Checkbox
+        checked={allSelected}
+        onCheckedChange={onSelectAll}
+        className="data-[state=checked]:bg-white data-[state=checked]:text-emerald-700"
+      /> */}
+      <Badge variant="secondary" className="bg-white/20 text-white">
+        {selectedCount} selected
+      </Badge>
       {/* Keyboard Instructions */}
-      <div className="bg-blue-50 border-b p-2 text-xs text-blue-700">
-        <div className="flex gap-4">
-          <span>
-            <kbd>Space</kbd> toggle
-          </span>
-          <span>
-            <kbd>Shift+↑↓</kbd> range select
-          </span>
-          <span>
-            <kbd>Ctrl+Click</kbd> multi
-          </span>
-          <span>
-            <kbd>Shift+Click</kbd> range
-          </span>
-          <span>
-            <kbd>Esc</kbd> clear
-          </span>
-        </div>
-      </div>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="cursor-help ml-2">
+              <HelpCircle className="h-4 w-4 text-white/80 hover:text-white transition-colors" />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-sm border-b bg-blue-50 text-blue-800">
+            <div className="flex gap-4 text-xs">
+              <span>
+                <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Space</kbd> toggle
+              </span>
+              <span>
+                <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Shift+↑↓</kbd> range
+              </span>
+              <span>
+                <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Ctrl+Click</kbd> multi
+              </span>
+              <span>
+                <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Esc</kbd> clear
+              </span>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+  </div>
+
 
       {/* Bulk Actions */}
-      {selectedCount > 0 && (
+      {/*selectedCount > 0 && (
         <div className="bg-gray-50 border-b p-3 flex gap-2 flex-wrap">
           <Button
             size="sm"
@@ -388,10 +395,10 @@ export function FileReferences({
             </Button>
           </div>
         </div>
-      )}
+      ) */}
 
       {/* References List */}
-      <ScrollArea className="flex-1 p-3 min-h-0">
+      <ScrollArea className="flex-1 px-3 py-1 min-h-0">
         {references.map((reference, index) => {
           const isItemSelected = isSelected(reference);
           const isActive = reference.id === currentReference?.id && !isMultiSelectMode;

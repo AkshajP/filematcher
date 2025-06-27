@@ -6,8 +6,8 @@ import { AgGridReact } from 'ag-grid-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Search, Settings, Table, TreePine } from 'lucide-react';
-import { FileReference } from '@/lib/types';
+import { Search, Settings, Table, TreePine, HelpCircle } from 'lucide-react';
+import { FileReference, MatchedPair } from '@/lib/types';
 
 // Import required AG Grid modules
 import { ModuleRegistry } from 'ag-grid-community'; 
@@ -27,9 +27,10 @@ import {
 
 // Import styles
 import 'ag-grid-community/styles/ag-grid.css';
-import 'ag-grid-community/styles/ag-theme-balham.css';
+import 'ag-grid-community/styles/ag-theme-alpine.css';
 
 import { AGGridSearchParser } from '@/lib/ag-grid-search-utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 interface DocumentFile {
   id: string;
@@ -57,6 +58,7 @@ interface NewDocumentSelectorProps {
   onSelectionChange: (selections: OrderedSelection[]) => void;
   currentReferences: Array<{ item: FileReference; order: number }>;
   onConfirmMapping: () => void;
+  matchedPairs: MatchedPair[]; // NEW: Add matched pairs to filter out used documents
 }
 
 // Build tree data using the simpler approach
@@ -81,14 +83,6 @@ const SelectionCellRenderer = (props: any) => {
   const gridContext = api.getGridOption('context');
   const { selectedFiles, cursorRowId, onToggleSelection, onToggleFolderSelection, viewMode } = gridContext || {};
   
-  // Debug logging for context
-  console.log('SelectionCellRenderer context:', {
-    hasToggleSelection: !!onToggleSelection,
-    hasToggleFolderSelection: !!onToggleFolderSelection,
-    viewMode,
-    isGroupNode: node.group
-  });
-  
   // Handle folder nodes (groups) in tree view
   if (node.group && viewMode === 'tree') {
     // Get child files using AG Grid's tree node structure
@@ -111,28 +105,17 @@ const SelectionCellRenderer = (props: any) => {
     
     collectChildFiles(node);
     
-    console.log('Folder node:', node.key, 'Child files found:', childFiles.length, childFiles.map(f => f.fileName));
-    
     const selectedChildFiles = childFiles.filter(file => 
       selectedFiles?.some((sel: OrderedSelection) => sel.item.id === file.id)
     );
     
     const isFullySelected = childFiles.length > 0 && selectedChildFiles.length === childFiles.length;
     const isPartiallySelected = selectedChildFiles.length > 0 && selectedChildFiles.length < childFiles.length;
-    const isUnselected = selectedChildFiles.length === 0;
     
     const handleFolderClick = (e: React.MouseEvent) => {
       e.stopPropagation();
-      console.log('Folder click handler called:', node.key, 'Has handler:', !!onToggleFolderSelection);
-      console.log('Full context object:', gridContext);
       if (onToggleFolderSelection && childFiles.length > 0) {
         onToggleFolderSelection(node, childFiles);
-      } else {
-        console.log('Cannot select folder - no handler or no files:', {
-          hasHandler: !!onToggleFolderSelection,
-          fileCount: childFiles.length,
-          contextKeys: Object.keys(gridContext || {})
-        });
       }
     };
     
@@ -290,7 +273,8 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
   selectedDocuments,
   onSelectionChange,
   currentReferences,
-  onConfirmMapping
+  onConfirmMapping,
+  matchedPairs // NEW: Receive matched pairs
 }) => {
   const gridRef = useRef<AgGridReact>(null);
   const [globalSearch, setGlobalSearch] = useState<string>('');
@@ -299,18 +283,22 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
   const [cursorRowId, setCursorRowId] = useState<string | null>(null);
   const [rangeAnchor, setRangeAnchor] = useState<string | null>(null);
 
-  // Transform data based on view mode
+  // NEW: Filter out already mapped documents
+  const availableDocuments = useMemo(() => {
+    const usedPaths = new Set(matchedPairs.map(pair => pair.path));
+    return documentFiles.filter(doc => !usedPaths.has(doc.filePath));
+  }, [documentFiles, matchedPairs]);
+
+  // Transform data based on view mode using filtered documents
   const displayData = useMemo(() => {
     if (viewMode === 'tree') {
-      return buildTreeData(documentFiles);
+      return buildTreeData(availableDocuments);
     }
-    return documentFiles;
-  }, [documentFiles, viewMode]);
+    return availableDocuments;
+  }, [availableDocuments, viewMode]);
 
   // Selection management functions
   const toggleSelection = useCallback((item: DocumentFile, event?: React.MouseEvent) => {
-    console.log('Toggle selection called for:', item.id, 'Current selections:', selectedDocuments.length);
-    
     const existingIndex = selectedDocuments.findIndex(sel => sel.item.id === item.id);
     
     if (event?.ctrlKey || event?.metaKey) {
@@ -347,33 +335,33 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
     }
   }, [selectedDocuments, rangeAnchor, onSelectionChange]);
 
-    const toggleFolderSelection = useCallback((folderNode: RowNode, childFiles: DocumentFile[]) => {
-        const childFileIds = new Set(childFiles.map(f => f.id));
+  const toggleFolderSelection = useCallback((folderNode: RowNode, childFiles: DocumentFile[]) => {
+    const childFileIds = new Set(childFiles.map(f => f.id));
 
-        // Find which of the currently selected files are children of this folder
-        const selectedChildren = selectedDocuments.filter(sel => childFileIds.has(sel.item.id));
+    // Find which of the currently selected files are children of this folder
+    const selectedChildren = selectedDocuments.filter(sel => childFileIds.has(sel.item.id));
 
-        // If all or some children are selected, the action is to deselect them all.
-        // Otherwise (if no children are selected), the action is to select them all.
-        if (selectedChildren.length > 0) {
-            // DESELECT: Filter out all files that belong to this folder
-            const newSelections = selectedDocuments.filter(sel => !childFileIds.has(sel.item.id));
-            onSelectionChange(newSelections);
-        } else {
-            // SELECT: Add all children from this folder to the selection
-            // First, take the selections that are NOT in the current folder
-            const existingSelections = selectedDocuments.filter(sel => !childFileIds.has(sel.item.id));
+    // If all or some children are selected, the action is to deselect them all.
+    // Otherwise (if no children are selected), the action is to select them all.
+    if (selectedChildren.length > 0) {
+      // DESELECT: Filter out all files that belong to this folder
+      const newSelections = selectedDocuments.filter(sel => !childFileIds.has(sel.item.id));
+      onSelectionChange(newSelections);
+    } else {
+      // SELECT: Add all children from this folder to the selection
+      // First, take the selections that are NOT in the current folder
+      const existingSelections = selectedDocuments.filter(sel => !childFileIds.has(sel.item.id));
 
-            // Create new selections for the folder's children, starting the order number
-            // after the existing selections.
-            const newChildSelections = childFiles.map((file, index) => ({
-                item: file,
-                order: existingSelections.length + index + 1
-            }));
+      // Create new selections for the folder's children, starting the order number
+      // after the existing selections.
+      const newChildSelections = childFiles.map((file, index) => ({
+        item: file,
+        order: existingSelections.length + index + 1
+      }));
 
-            onSelectionChange([...existingSelections, ...newChildSelections]);
-        }
-    }, [selectedDocuments, onSelectionChange]);   
+      onSelectionChange([...existingSelections, ...newChildSelections]);
+    }
+  }, [selectedDocuments, onSelectionChange]);   
 
   // Range selection with chronological order
   const handleRangeSelection = useCallback((startId: string, endId: string) => {
@@ -445,6 +433,22 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
     onSelectionChange([]);
     setRangeAnchor(null);
   }, [onSelectionChange]);
+
+  // Clear cursor and selections when filtered documents change (i.e., when mappings are created)
+  useEffect(() => {
+    // Clear selections that are no longer available
+    const availableIds = new Set(availableDocuments.map(doc => doc.id));
+    const validSelections = selectedDocuments.filter(sel => availableIds.has(sel.item.id));
+    
+    if (validSelections.length !== selectedDocuments.length) {
+      onSelectionChange(validSelections);
+    }
+    
+    // Clear cursor if it's no longer available
+    if (cursorRowId && !availableIds.has(cursorRowId)) {
+      setCursorRowId(availableDocuments[0]?.id || null);
+    }
+  }, [availableDocuments, selectedDocuments, cursorRowId, onSelectionChange]);
 
   // Table view column definitions
   const tableColumnDefs = useMemo<ColDef[]>(() => [
@@ -627,12 +631,11 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
 
   useEffect(() => {
     if (gridApi) {
-      // *** FIX: Pass the new toggleFolderSelection function in the context ***
       const newContext = {
         selectedFiles: selectedDocuments,
         cursorRowId,
         onToggleSelection: toggleSelection,
-        onToggleFolderSelection: toggleFolderSelection, // <-- ADDED
+        onToggleFolderSelection: toggleFolderSelection,
         viewMode
       };
 
@@ -646,29 +649,26 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
         });
       }, 0);
     }
-    // *** FIX: Add toggleFolderSelection to the dependency array
   }, [gridApi, selectedDocuments, cursorRowId, toggleSelection, toggleFolderSelection, viewMode]);
 
   // Handle grid ready
   const onGridReady = useCallback((params: GridReadyEvent) => {
     setGridApi(params.api);
 
-    if (documentFiles.length > 0) {
-      setCursorRowId(documentFiles[0].id);
+    if (availableDocuments.length > 0) {
+      setCursorRowId(availableDocuments[0].id);
     }
 
-    // *** FIX: Add toggleFolderSelection to the initial context ***
     const initialContext = {
       selectedFiles: selectedDocuments,
-      cursorRowId: documentFiles[0]?.id || null,
+      cursorRowId: availableDocuments[0]?.id || null,
       onToggleSelection: toggleSelection,
-      onToggleFolderSelection: toggleFolderSelection, // <-- ADDED
+      onToggleFolderSelection: toggleFolderSelection,
       viewMode
     };
 
     params.api.setGridOption('context', initialContext);
-  }, [documentFiles, selectedDocuments, toggleSelection, toggleFolderSelection, viewMode]);
-
+  }, [availableDocuments, selectedDocuments, toggleSelection, toggleFolderSelection, viewMode]);
 
   // Handle cell clicks
   const onCellClicked = useCallback((event: CellClickedEvent) => {
@@ -755,10 +755,18 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
     return AGGridSearchParser.getSearchHint(globalSearch);
   };
 
+  // NEW: Get count of filtered documents vs total
+  const documentCounts = useMemo(() => {
+    const total = documentFiles.length;
+    const available = availableDocuments.length;
+    const mapped = total - available;
+    return { total, available, mapped };
+  }, [documentFiles.length, availableDocuments.length]);
+
   return (
     <div className="w-full h-full flex flex-col bg-white">
       {/* Header */}
-      <div className="p-4 border-b bg-gray-50">
+      <div className="p-2 border-b bg-gray-50">
         <div className="flex items-center gap-4 mb-3">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
@@ -766,8 +774,21 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
               placeholder="Search documents... (use / for path/filename)"
               value={globalSearch}
               onChange={(e) => setGlobalSearch(e.target.value)}
-              className="pl-10"
+              className="pl-10 pr-10"
             />
+            {/* Search help icon with tooltip */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2 cursor-help">
+                    <HelpCircle className="h-4 w-4 text-gray-400 hover:text-gray-600 transition-colors" />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-sm">
+                  <p className="text-sm">{getSearchHint()}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
           
           <Button
@@ -796,10 +817,7 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
           </Button>
         </div>
         
-        {/* Search hint */}
-        <div className="text-xs text-gray-600 mb-2">
-          {getSearchHint()}
-        </div>
+    
         
         {/* Selection summary and actions */}
         <div className="flex items-center justify-between">
@@ -823,6 +841,19 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
             </Button>
           </div>
           
+            <div className="flex gap-2 text-xs">
+            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+              {documentCounts.available} Available
+            </Badge>
+            {documentCounts.mapped > 0 && (
+              <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-300">
+                {documentCounts.mapped} Mapped
+              </Badge>
+            )}
+            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
+              {documentCounts.total} Total
+            </Badge>
+          </div>
           <Button
             onClick={onConfirmMapping}
             disabled={!canConfirmMapping}
@@ -843,7 +874,7 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       </div>
 
       {/* AG Grid */}
-      <div className="flex-1 ag-theme-balham">
+      <div className="flex-1 ag-theme-alpine">
         <AgGridReact
           ref={gridRef}
           rowData={displayData}
@@ -862,7 +893,7 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
 
       {/* Selection Details */}
       {selectedDocuments.length > 0 && (
-        <div className="p-4 border-t bg-gray-50 max-h-32 overflow-y-auto">
+        <div className="p-2 border-t bg-gray-50 max-h-32 overflow-y-auto">
           <h3 className="font-medium mb-2 text-sm">
             Selected Files ({selectedDocuments.length}):
           </h3>
