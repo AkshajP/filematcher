@@ -10,3 +10,9 @@
 - see if indentation can be added bulk matching (how does order get selected?) prolly show staging before confirming a mapping 
 (implement a counting on click?)
 
+After AG Grid --
+- Now what about auto match?
+- remove .DSstore in filenames
+- introducing natural sort in AG Grid (1, 10,11,...2,20,21..etc is wrong)
+- try AG Grid even for client references
+

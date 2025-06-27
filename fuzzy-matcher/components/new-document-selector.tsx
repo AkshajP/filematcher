@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Search, Settings, Table, TreePine, HelpCircle } from 'lucide-react';
-import { FileReference, MatchedPair } from '@/lib/types';
+import { FileReference, MatchedPair, generateUniqueId } from '@/lib/types';
 
 // Import required AG Grid modules
 import { ModuleRegistry } from 'ag-grid-community'; 
@@ -23,6 +23,7 @@ import {
   ITextFilterParams,
   CellClickedEvent,
   RowNode,
+  CellKeyDownEvent,
 } from 'ag-grid-community';
 
 // Import styles
@@ -145,7 +146,7 @@ const SelectionCellRenderer = (props: any) => {
   // Find if this item is selected
   const selection = selectedFiles?.find((sel: OrderedSelection) => sel.item.id === data.id);
   const isSelected = !!selection;
-  const isCursor = data.id === cursorRowId;
+  const isCursor = cursorRowId && data.id === cursorRowId;
   const orderNumber = selection?.order;
   
   const handleClick = (e: React.MouseEvent) => {
@@ -157,10 +158,12 @@ const SelectionCellRenderer = (props: any) => {
   
   return (
     <div 
+      key={`selection-${data.id}-${isSelected}-${isCursor}-${cursorRowId}`}
       className={`
         flex items-center justify-center h-full w-full cursor-pointer relative
+        transition-all duration-200
         ${isCursor ? 'ring-2 ring-blue-400 ring-offset-1' : ''}
-        ${isSelected ? 'bg-emerald-50' : 'hover:bg-gray-50'}
+        ${isSelected ? 'bg-emerald-50' : 'bg-white hover:bg-gray-50'}
       `}
       onClick={handleClick}
     >
@@ -208,10 +211,18 @@ const FilePathCellRenderer = (props: any) => {
   
   const pathParts = value.split('/').filter((part: string) => part);
   const folders = pathParts.slice(0, -1);
-  const isCursor = data.id === cursorRowId;
+  const isCursor = cursorRowId && data.id === cursorRowId;
   
   return (
-    <div className={`flex flex-col relative ${isCursor ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
+    <div 
+      key={`filepath-${data.id}-${isCursor}-${cursorRowId}`}
+      className={`flex flex-col relative transition-all duration-200 ${isCursor ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}
+    >
+      {/* Cursor indicator */}
+      {isCursor && (
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 rounded-l"></div>
+      )}
+      
       {folders.length > 0 && (
         <span className="text-xs text-gray-500">
           /{folders.join('/')}/
@@ -230,7 +241,7 @@ const AutoGroupCellRenderer = (props: any) => {
   const gridContext = api.getGridOption('context');
   const { cursorRowId } = gridContext || {};
   
-  const isCursor = data && data.id === cursorRowId;
+  const isCursor = data && cursorRowId && data.id === cursorRowId;
   const isGroup = node.group;
   const isExpanded = node.expanded;
   
@@ -251,7 +262,10 @@ const AutoGroupCellRenderer = (props: any) => {
   
   // For file nodes
   return (
-    <div className={`flex items-center gap-2 relative ${isCursor ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
+    <div 
+      key={`autogroup-${data?.id}-${isCursor}-${cursorRowId}`}
+      className={`flex items-center gap-2 relative transition-all duration-200 ${isCursor ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}
+    >
       {/* Cursor indicator */}
       {isCursor && (
         <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 rounded-l"></div>
@@ -281,7 +295,8 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
   const [gridApi, setGridApi] = useState<GridApi | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [cursorRowId, setCursorRowId] = useState<string | null>(null);
-  const [rangeAnchor, setRangeAnchor] = useState<string | null>(null);
+  const [cursorIndex, setCursorIndex] = useState<number>(0);
+  const [rangeAnchor, setRangeAnchor] = useState<number>(-1);
 
   // NEW: Filter out already mapped documents
   const availableDocuments = useMemo(() => {
@@ -297,9 +312,73 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
     return availableDocuments;
   }, [availableDocuments, viewMode]);
 
+  // Helper function to get all visible (filtered) documents in order
+  const getVisibleDocuments = useCallback((): DocumentFile[] => {
+    if (!gridApi) return displayData;
+    
+    const visibleDocs: DocumentFile[] = [];
+    gridApi.forEachNodeAfterFilterAndSort(node => {
+      if (node.data && !node.group) {
+        visibleDocs.push(node.data);
+      }
+    });
+    return visibleDocs;
+  }, [gridApi, displayData]);
+
+  // Helper function to convert cursor index to row ID based on visible documents
+  const getRowIdFromIndex = useCallback((index: number): string | null => {
+    const visibleDocs = getVisibleDocuments();
+    return visibleDocs[index]?.id || null;
+  }, [getVisibleDocuments]);
+
+  // Helper function to get index of current cursor in visible documents
+  const getCurrentCursorIndex = useCallback((): number => {
+    if (!cursorRowId) return 0;
+    const visibleDocs = getVisibleDocuments();
+    const index = visibleDocs.findIndex(doc => doc.id === cursorRowId);
+    return index === -1 ? 0 : index;
+  }, [cursorRowId, getVisibleDocuments]);
+
+  // Update cursor index when cursor row ID changes
+  useEffect(() => {
+    if (cursorRowId && gridApi) {
+      const visibleDocs = getVisibleDocuments();
+      const newIndex = visibleDocs.findIndex(doc => doc.id === cursorRowId);
+      if (newIndex !== -1 && newIndex !== cursorIndex) {
+        setCursorIndex(newIndex);
+      } else if (newIndex === -1) {
+        // Cursor row not visible, reset to first visible
+        setCursorRowId(visibleDocs[0]?.id || null);
+        setCursorIndex(0);
+      }
+    }
+  }, [cursorRowId, gridApi, getVisibleDocuments, cursorIndex]);
+
+  // Natural sort comparator for alphanumeric sorting
+  const naturalComparator = useCallback((valueA: any, valueB: any): number => {
+    // Handle null/undefined values
+    if (valueA == null && valueB == null) return 0;
+    if (valueA == null) return -1;
+    if (valueB == null) return 1;
+    
+    // Convert to strings for comparison
+    const strA = String(valueA);
+    const strB = String(valueB);
+    
+    // Use localeCompare with numeric option for natural sorting
+    return strA.localeCompare(strB, undefined, {
+      numeric: true,
+      sensitivity: 'base',
+      caseFirst: 'lower'
+    });
+  }, []);
+
   // Selection management functions
   const toggleSelection = useCallback((item: DocumentFile, event?: React.MouseEvent) => {
     const existingIndex = selectedDocuments.findIndex(sel => sel.item.id === item.id);
+    
+    const visibleDocs = getVisibleDocuments();
+    const itemIndex = visibleDocs.findIndex(doc => doc.id === item.id);
     
     if (event?.ctrlKey || event?.metaKey) {
       // Ctrl+Click: Toggle individual selection
@@ -318,11 +397,16 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
         onSelectionChange(newSelections);
       }
       setCursorRowId(item.id);
-      setRangeAnchor(item.id);
-    } else if (event?.shiftKey && rangeAnchor) {
+      setCursorIndex(itemIndex !== -1 ? itemIndex : 0);
+      setRangeAnchor(itemIndex !== -1 ? itemIndex : 0);
+    } else if (event?.shiftKey && rangeAnchor !== -1) {
       // Shift+Click: Range selection
-      handleRangeSelection(rangeAnchor, item.id);
-      setCursorRowId(item.id);
+      event.preventDefault();
+      if (itemIndex !== -1) {
+        handleRangeSelection(rangeAnchor, itemIndex);
+        setCursorRowId(item.id);
+        setCursorIndex(itemIndex);
+      }
     } else {
       // Regular click: Single selection
       if (existingIndex >= 0) {
@@ -331,9 +415,10 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
         onSelectionChange([{ item, order: 1 }]);
       }
       setCursorRowId(item.id);
-      setRangeAnchor(item.id);
+      setCursorIndex(itemIndex !== -1 ? itemIndex : 0);
+      setRangeAnchor(itemIndex !== -1 ? itemIndex : 0);
     }
-  }, [selectedDocuments, rangeAnchor, onSelectionChange]);
+  }, [selectedDocuments, rangeAnchor, onSelectionChange, getVisibleDocuments]);
 
   const toggleFolderSelection = useCallback((folderNode: RowNode, childFiles: DocumentFile[]) => {
     const childFileIds = new Set(childFiles.map(f => f.id));
@@ -364,51 +449,48 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
   }, [selectedDocuments, onSelectionChange]);   
 
   // Range selection with chronological order
-  const handleRangeSelection = useCallback((startId: string, endId: string) => {
-    if (!gridApi) return;
+  const handleRangeSelection = useCallback((startIndex: number, endIndex: number) => {
+    const visibleDocs = getVisibleDocuments();
     
-    // Get all displayed (filtered) row nodes - only files, not folders
-    const allNodes: any[] = [];
-    gridApi.forEachNodeAfterFilterAndSort(node => {
-      if (node.data && !node.group) {
-        allNodes.push(node);
-      }
+    // Clear all existing selections first
+    selectedDocuments.forEach(selection => {
+      // We'll replace all selections with the new range
     });
-    
-    const startIndex = allNodes.findIndex(node => node.data.id === startId);
-    const endIndex = allNodes.findIndex(node => node.data.id === endId);
-    
-    if (startIndex === -1 || endIndex === -1) return;
-    
+
+    // Determine selection direction and create chronological order
     const selectionDirection = endIndex > startIndex ? 'down' : 'up';
-    const minIndex = Math.min(startIndex, endIndex);
-    const maxIndex = Math.max(startIndex, endIndex);
+    const start = Math.min(startIndex, endIndex);
+    const end = Math.max(startIndex, endIndex);
     
     // Create selection array based on chronological order of selection
-    const newSelections: OrderedSelection[] = [];
+    const documentsToSelect: DocumentFile[] = [];
     
     if (selectionDirection === 'down') {
       // Selecting downward: start gets 1, next gets 2, etc.
-      for (let i = minIndex; i <= maxIndex; i++) {
-        const orderNumber = (i - minIndex) + 1;
-        newSelections.push({
-          item: allNodes[i].data,
-          order: orderNumber
-        });
+      for (let i = start; i <= end; i++) {
+        const doc = visibleDocs[i];
+        if (doc) {
+          documentsToSelect.push(doc);
+        }
       }
     } else {
       // Selecting upward: start gets 1, previous gets 2, etc.
-      for (let i = maxIndex; i >= minIndex; i--) {
-        const orderNumber = (maxIndex - i) + 1;
-        newSelections.push({
-          item: allNodes[i].data,
-          order: orderNumber
-        });
+      for (let i = end; i >= start; i--) {
+        const doc = visibleDocs[i];
+        if (doc) {
+          documentsToSelect.push(doc);
+        }
       }
     }
     
+    // Apply selections in chronological order
+    const newSelections = documentsToSelect.map((doc, index) => ({
+      item: doc,
+      order: index + 1
+    }));
+    
     onSelectionChange(newSelections);
-  }, [gridApi, onSelectionChange]);
+  }, [getVisibleDocuments, selectedDocuments, onSelectionChange]);
 
   const selectAll = useCallback(() => {
     if (!gridApi) return;
@@ -426,12 +508,12 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
     }));
     
     onSelectionChange(newSelections);
-    setRangeAnchor(allItems[0]?.id || null);
+    setRangeAnchor(0);
   }, [gridApi, onSelectionChange]);
 
   const clearAllSelections = useCallback(() => {
     onSelectionChange([]);
-    setRangeAnchor(null);
+    setRangeAnchor(-1);
   }, [onSelectionChange]);
 
   // Clear cursor and selections when filtered documents change (i.e., when mappings are created)
@@ -468,6 +550,8 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       flex: 2,
       cellRenderer: FilePathCellRenderer,
       filter: 'agTextColumnFilter',
+      sortable: true,
+      comparator: naturalComparator,
       filterParams: {
         filterOptions: ['contains', 'startsWith', 'endsWith'],
         debounceMs: 500,
@@ -483,6 +567,8 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       field: 'fileName',
       flex: 1,
       filter: 'agTextColumnFilter',
+      sortable: true,
+      comparator: naturalComparator,
       filterParams: {
         filterOptions: ['contains', 'startsWith', 'endsWith'],
         debounceMs: 500,
@@ -495,6 +581,8 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       field: 'fileType',
       width: 100,
       filter: 'agSetColumnFilter',
+      sortable: true,
+      comparator: naturalComparator,
       filterParams: {
         values: ['pdf', 'docx', 'xlsx', 'jpg', 'png'],
         refreshValuesOnOpen: true
@@ -507,6 +595,7 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       width: 120,
       cellRenderer: FileSizeCellRenderer,
       filter: 'agNumberColumnFilter',
+      sortable: true,
       filterParams: {
         debounceMs: 500
       },
@@ -518,12 +607,14 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       field: 'dateModified',
       width: 130,
       filter: 'agDateColumnFilter',
+      sortable: true,
+      comparator: naturalComparator,
       filterParams: {
         debounceMs: 500
       },
       floatingFilter: true
     }
-  ], []);
+  ], [naturalComparator]);
 
   // Tree view column definitions
   const treeColumnDefs = useMemo<ColDef[]>(() => [
@@ -543,6 +634,8 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       flex: 2,
       cellRenderer: 'agGroupCellRenderer',
       filter: 'agTextColumnFilter',
+      sortable: true,
+      comparator: naturalComparator,
       filterParams: {
         filterOptions: ['contains', 'startsWith', 'endsWith'],
         debounceMs: 500,
@@ -555,6 +648,8 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       field: 'fileType',
       width: 100,
       filter: 'agSetColumnFilter',
+      sortable: true,
+      comparator: naturalComparator,
       filterParams: {
         values: ['pdf', 'docx', 'xlsx', 'jpg', 'png'],
         refreshValuesOnOpen: true
@@ -570,6 +665,7 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       width: 120,
       cellRenderer: FileSizeCellRenderer,
       filter: 'agNumberColumnFilter',
+      sortable: true,
       filterParams: {
         debounceMs: 500
       },
@@ -580,12 +676,14 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       field: 'dateModified',
       width: 130,
       filter: 'agDateColumnFilter',
+      sortable: true,
+      comparator: naturalComparator,
       filterParams: {
         debounceMs: 500
       },
       floatingFilter: true
     }
-  ], []);
+  ], [naturalComparator]);
 
   // Auto group column definition
   const autoGroupColumnDef = useMemo(() => ({
@@ -629,6 +727,7 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
     return viewMode === 'tree' ? treeColumnDefs : tableColumnDefs;
   }, [viewMode, treeColumnDefs, tableColumnDefs]);
 
+  // Update grid context when state changes
   useEffect(() => {
     if (gridApi) {
       const newContext = {
@@ -641,13 +740,10 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
 
       gridApi.setGridOption('context', newContext);
 
-      // Force immediate refresh of the selection column
-      setTimeout(() => {
-        gridApi.refreshCells({
-          columns: ['select'],
-          force: true
-        });
-      }, 0);
+      // Force immediate refresh of all cells to update visual state
+      gridApi.refreshCells({
+        force: true
+      });
     }
   }, [gridApi, selectedDocuments, cursorRowId, toggleSelection, toggleFolderSelection, viewMode]);
 
@@ -680,8 +776,218 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
       return;
     }
 
-    setCursorRowId(event.data.id);
-  }, []);
+    const document = event.data;
+    if (!document) return;
+
+    const visibleDocs = getVisibleDocuments();
+    const clickIndex = visibleDocs.findIndex(doc => doc.id === document.id);
+    
+    if (clickIndex === -1) return;
+
+    if (event.event?.ctrlKey || event.event?.metaKey) {
+      // Ctrl+Click: Toggle selection
+      toggleSelection(document, event.event as React.MouseEvent);
+    } else if (event.event?.shiftKey && rangeAnchor !== -1) {
+      // Shift+Click: Range selection
+      handleRangeSelection(rangeAnchor, clickIndex);
+      setCursorRowId(document.id);
+      setCursorIndex(clickIndex);
+    } else {
+      // Regular click: Update cursor
+      setCursorRowId(document.id);
+      setCursorIndex(clickIndex);
+    }
+  }, [toggleSelection, rangeAnchor, handleRangeSelection, getVisibleDocuments]);
+
+  // Handle keyboard events
+  const onCellKeyDown = useCallback((event: CellKeyDownEvent) => {
+    const { key, ctrlKey, metaKey, shiftKey } = event.event;
+    
+    if (!gridApi) return;
+
+    const visibleDocs = getVisibleDocuments();
+    const currentIndex = getCurrentCursorIndex();
+    let handled = false;
+
+    switch (key) {
+      case 'ArrowDown':
+        if (shiftKey) {
+          // Shift+Down: Range selection downward
+          event.event.preventDefault();
+          if (currentIndex < visibleDocs.length - 1) {
+            const newCursorIndex = currentIndex + 1;
+            
+            // If no anchor set, start range selection
+            if (rangeAnchor === -1) {
+              setRangeAnchor(currentIndex);
+            }
+            
+            // Perform range selection from anchor to new cursor position
+            handleRangeSelection(rangeAnchor, newCursorIndex);
+            
+            // Update cursor
+            const newRowId = getRowIdFromIndex(newCursorIndex);
+            if (newRowId) {
+              setCursorRowId(newRowId);
+              setCursorIndex(newCursorIndex);
+            }
+          }
+        } else {
+          // Down: Move cursor
+          event.event.preventDefault();
+          if (currentIndex < visibleDocs.length - 1) {
+            const newCursorIndex = currentIndex + 1;
+            const newRowId = getRowIdFromIndex(newCursorIndex);
+            if (newRowId) {
+              setCursorRowId(newRowId);
+              setCursorIndex(newCursorIndex);
+              // Reset anchor when not using shift
+              setRangeAnchor(-1);
+            }
+          }
+        }
+        handled = true;
+        break;
+
+      case 'ArrowUp':
+        if (shiftKey) {
+          // Shift+Up: Range selection upward
+          event.event.preventDefault();
+          if (currentIndex > 0) {
+            const newCursorIndex = currentIndex - 1;
+            
+            // If no anchor set, start range selection
+            if (rangeAnchor === -1) {
+              setRangeAnchor(currentIndex);
+            }
+            
+            // Perform range selection from anchor to new cursor position
+            handleRangeSelection(rangeAnchor, newCursorIndex);
+            
+            // Update cursor
+            const newRowId = getRowIdFromIndex(newCursorIndex);
+            if (newRowId) {
+              setCursorRowId(newRowId);
+              setCursorIndex(newCursorIndex);
+            }
+          }
+        } else {
+          // Up: Move cursor
+          event.event.preventDefault();
+          if (currentIndex > 0) {
+            const newCursorIndex = currentIndex - 1;
+            const newRowId = getRowIdFromIndex(newCursorIndex);
+            if (newRowId) {
+              setCursorRowId(newRowId);
+              setCursorIndex(newCursorIndex);
+              // Reset anchor when not using shift
+              setRangeAnchor(-1);
+            }
+          }
+        }
+        handled = true;
+        break;
+
+      case ' ':
+        // Space: Toggle selection at cursor
+        event.event.preventDefault();
+        const currentDoc = visibleDocs[currentIndex];
+        if (currentDoc) {
+          toggleSelection(currentDoc);
+          setRangeAnchor(currentIndex);
+        }
+        handled = true;
+        break;
+
+      case 'Escape':
+        // Escape: Clear all selections and reset all states
+        event.event.preventDefault();
+        if (selectedDocuments.length > 0) {
+          // Step 1: Clear ALL state immediately
+          const targetCursor = visibleDocs[0]?.id || null;
+          
+          setCursorRowId(null);  // Force clear cursor
+          setRangeAnchor(-1);
+          clearAllSelections();      // Clear selections
+          
+          // Step 2: Force complete grid refresh
+          setTimeout(() => {
+            if (gridApi) {
+              gridApi.refreshCells({ force: true, suppressFlash: false });
+              gridApi.redrawRows();
+              
+              // Step 3: Set single cursor after everything is cleared
+              setTimeout(() => {
+                setCursorRowId(targetCursor);
+                
+                if (targetCursor) {
+                  const newIndex = visibleDocs.findIndex(doc => doc.id === targetCursor);
+                  setCursorIndex(newIndex !== -1 ? newIndex : 0);
+                }
+                
+                // Final refresh to apply cursor
+                setTimeout(() => {
+                  gridApi.refreshCells({ force: true });
+                }, 20);
+              }, 30);
+            }
+          }, 10);
+        }
+        handled = true;
+        break;
+
+      case 'a':
+        if (ctrlKey || metaKey) {
+          // Ctrl+A: Select all
+          event.event.preventDefault();
+          selectAll();
+          setRangeAnchor(0);
+          handled = true;
+        }
+        break;
+
+      case 'Enter':
+        // Enter: Confirm mapping if valid
+        event.event.preventDefault();
+        if (canConfirmMapping) {
+          onConfirmMapping();
+        }
+        handled = true;
+        break;
+    }
+
+    if (handled) {
+      event.event.stopPropagation();
+    }
+  }, [gridApi, getCurrentCursorIndex, getVisibleDocuments, getRowIdFromIndex, rangeAnchor, handleRangeSelection, toggleSelection, clearAllSelections, selectedDocuments, selectAll, onConfirmMapping]);
+
+  // Clear states when selections are cleared externally
+  useEffect(() => {
+    if (selectedDocuments.length === 0) {
+      setRangeAnchor(-1);
+      
+      // Only reset cursor if we're not already in a clearing operation
+      if (gridApi && cursorRowId) {
+        // Determine target cursor position
+        const targetCursor = availableDocuments[0]?.id || null;
+        
+        // Only update if different from current
+        if (targetCursor && targetCursor !== cursorRowId) {
+          setCursorRowId(targetCursor);
+          const visibleDocs = getVisibleDocuments();
+          const index = visibleDocs.findIndex(doc => doc.id === targetCursor);
+          if (index !== -1) {
+            setCursorIndex(index);
+          }
+          
+          // Force refresh after cursor update
+          setTimeout(() => {
+            gridApi.refreshCells({ force: true });
+          }, 10);
+        }
+      }
+    }
+  }, [selectedDocuments.length, gridApi, cursorRowId, availableDocuments, getVisibleDocuments]);
 
   // Handle global search
   const handleGlobalSearch = useCallback((searchValue: string) => {
@@ -764,7 +1070,7 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
   }, [documentFiles.length, availableDocuments.length]);
 
   return (
-    <div className="w-full h-full flex flex-col bg-white">
+    <div className="w-full h-full flex flex-col bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500" tabIndex={0}>
       {/* Header */}
       <div className="p-2 border-b bg-gray-50">
         <div className="flex items-center gap-4 mb-3">
@@ -817,8 +1123,6 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
           </Button>
         </div>
         
-    
-        
         {/* Selection summary and actions */}
         <div className="flex items-center justify-between">
           <div className="flex gap-2">
@@ -841,7 +1145,7 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
             </Button>
           </div>
           
-            <div className="flex gap-2 text-xs">
+          <div className="flex gap-2 text-xs">
             <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
               {documentCounts.available} Available
             </Badge>
@@ -854,6 +1158,7 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
               {documentCounts.total} Total
             </Badge>
           </div>
+          
           <Button
             onClick={onConfirmMapping}
             disabled={!canConfirmMapping}
@@ -871,6 +1176,36 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
             )}
           </Button>
         </div>
+
+        {/* Keyboard Instructions */}
+        <div className="bg-blue-50 border-t border-blue-200 mt-2 p-2 text-xs text-blue-700">
+          <div className="grid grid-cols-2 gap-2">
+            <span>
+              <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">↑↓</kbd> navigate
+            </span>
+            <span>
+              <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Space</kbd> toggle
+            </span>
+            <span>
+              <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Shift+↑↓</kbd> range
+            </span>
+            <span>
+              <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Shift+Click</kbd> range
+            </span>
+            <span>
+              <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Ctrl+Click</kbd> multi
+            </span>
+            <span>
+              <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Esc</kbd> clear
+            </span>
+            <span>
+              <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Ctrl+A</kbd> select all
+            </span>
+            <span>
+              <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Enter</kbd> confirm
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* AG Grid */}
@@ -882,6 +1217,7 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
           gridOptions={gridOptions}
           onGridReady={onGridReady}
           onCellClicked={onCellClicked}
+          onCellKeyDown={onCellKeyDown}
           suppressMenuHide={true}
           enableCellTextSelection={false}
           treeData={viewMode === 'tree'}
