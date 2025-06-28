@@ -14,7 +14,9 @@ export interface FileReference {
 }
 
 export interface MatchedPair {
-  reference: string;
+  id:string;
+  referenceId: string; //< added since references could be potentially identical
+  reference: string; 
   path: string;
   score: number;
   timestamp: string;
@@ -66,7 +68,6 @@ export interface MatcherActions {
   updateFilePathsOnly: (filePaths: string[]) => void;
 }
 
-// Utility function to generate unique IDs
-export function generateUniqueId(): string {
-  return `ref-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
+export const generateUniqueId = (): string => {
+    return `_${Math.random().toString(36).substr(2, 9)}`;
+};

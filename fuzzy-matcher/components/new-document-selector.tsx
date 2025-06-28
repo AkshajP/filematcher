@@ -1178,7 +1178,7 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
         </div>
 
         {/* Keyboard Instructions */}
-        <div className="bg-blue-50 border-t border-blue-200 mt-2 p-2 text-xs text-blue-700">
+        {/* <div className="bg-blue-50 border-t border-blue-200 mt-2 p-2 text-xs text-blue-700">
           <div className="grid grid-cols-2 gap-2">
             <span>
               <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">↑↓</kbd> navigate
@@ -1205,8 +1205,8 @@ export const NewDocumentSelector: React.FC<NewDocumentSelectorProps> = ({
               <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Enter</kbd> confirm
             </span>
           </div>
-        </div>
-      </div>
+        </div>*/}
+      </div> 
 
       {/* AG Grid */}
       <div className="flex-1 ag-theme-alpine">

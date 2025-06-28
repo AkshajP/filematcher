@@ -190,10 +190,12 @@ export default function NewMapperPage() {
 
   // Calculate unmatched references for the workflow header
   const unmatchedReferences = useMemo(() => {
-    return fileReferences.filter(ref => 
-      !matchedPairs.some(pair => pair.reference === ref.description)
-    );
+    // Create a Set of reference IDs that have already been matched for fast lookups
+    const matchedReferenceIds = new Set(matchedPairs.map(pair => pair.referenceId));
+    // Filter the original fileReferences list, keeping only those whose ID is not in the matched set
+    return fileReferences.filter(ref => !matchedReferenceIds.has(ref.id));
   }, [fileReferences, matchedPairs]);
+
 
   // Filter current selections to only include unmapped references
   const validSelectedReferences = useMemo(() => {
@@ -297,9 +299,8 @@ export default function NewMapperPage() {
       return;
     }
 
-    // Create mappings based on current selections
+    // Bulk mapping
     if (validSelectedReferences.length > 0 && selectedDocuments.length > 0) {
-      // Bulk mapping: pair references and documents by order
       const sortedRefs = validSelectedReferences.sort((a, b) => a.order - b.order);
       const sortedDocs = selectedDocuments.sort((a, b) => a.order - b.order);
       
@@ -308,9 +309,11 @@ export default function NewMapperPage() {
       
       for (let i = 0; i < maxPairs; i++) {
         newMappings.push({
+          id: generateUniqueId(),
+          referenceId: sortedRefs[i].item.id, // <<<< Store the unique reference ID
           reference: sortedRefs[i].item.description,
           path: sortedDocs[i].item.filePath,
-          score: 1.0, // Manual mapping gets perfect score
+          score: 1.0,
           timestamp: new Date().toISOString(),
           method: validSelectedReferences.length > 1 ? 'manual-bulk' : 'manual',
           sessionId: sessionId,
@@ -323,10 +326,11 @@ export default function NewMapperPage() {
       setSelectedReferences([]);
       setSelectedDocuments([]);
       
-      console.log(`Created ${newMappings.length} new mappings`);
     } else if (validCurrentReference && selectedDocuments.length === 1) {
       // Single mapping
       const newMapping: MatchedPair = {
+        id: generateUniqueId(),
+        referenceId: validCurrentReference.id, // <<<< Store the unique reference ID
         reference: validCurrentReference.description,
         path: selectedDocuments[0].item.filePath,
         score: 1.0,
@@ -339,14 +343,12 @@ export default function NewMapperPage() {
       
       setMatchedPairs(prev => [...prev, newMapping]);
       setSelectedDocuments([]);
-      
-      console.log('Created single mapping:', newMapping);
     }
-  }, [validSelectedReferences, selectedDocuments, validCurrentReference, hasValidReferencesToMap]);
+  }, [validSelectedReferences, selectedDocuments, validCurrentReference, hasValidReferencesToMap, sessionId]);
 
-  // Remove matched pair
-  const handleRemoveMatch = useCallback((index: number) => {
-    setMatchedPairs(prev => prev.filter((_, i) => i !== index));
+  // Remove matched pair by ID for stability
+  const handleRemoveMatch = useCallback((idToRemove: string) => {
+    setMatchedPairs(prev => prev.filter(pair => pair.id !== idToRemove));
   }, []);
 
   // Resize handling functions

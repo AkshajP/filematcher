@@ -9,6 +9,7 @@ interface MatchedPairsProps {
   matchedPairs: MatchedPair[];
   onRemoveMatch: (index: number) => void;
 }
+
 export function MatchedPairs({ matchedPairs, onRemoveMatch }: MatchedPairsProps) {
   console.log('MatchedPairs component received:', matchedPairs.length, 'pairs');
   
@@ -39,7 +40,7 @@ export function MatchedPairs({ matchedPairs, onRemoveMatch }: MatchedPairsProps)
 
               return (
                 <div
-                  key={`${pair.reference}-${index}`}
+                  key={pair.id} // Correction: Use a unique ID from the pair object
                   className="bg-green-50 border border-green-200 rounded-md p-4 relative group"
                 >
                   {/* Remove Button */}

@@ -1,4 +1,4 @@
-// fuzzy-matcher/components/file-references.tsx - Converted to AG Grid
+// fuzzy-matcher/components/file-references.tsx - Improved with patterns from new-document-selector.tsx
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,18 +58,10 @@ const SelectionCellRenderer = (props: any) => {
   const gridContext = api.getGridOption('context');
   const { selectedReferences = [], cursorRowId, onToggleSelection, isMultiSelectMode } = gridContext || {};
   
-  // More precise cursor detection - ensure only ONE cell has cursor at a time
-  const isCursor = Boolean(
-    cursorRowId && 
-    data.id && 
-    data.id === cursorRowId && 
-    typeof data.id === 'string' && 
-    typeof cursorRowId === 'string'
-  );
-  
-  // Find if this item is selected - more explicit check
+  // Find if this item is selected
   const selection = selectedReferences.find((sel: any) => sel.item && sel.item.id === data.id);
   const isSelected = Boolean(selection);
+  const isCursor = cursorRowId && data.id === cursorRowId;
   const orderNumber = selection?.order;
   
   const handleClick = (e: React.MouseEvent) => {
@@ -81,7 +73,7 @@ const SelectionCellRenderer = (props: any) => {
   
   return (
     <div 
-      key={`selection-${data.id}-${isSelected}-${isCursor}-${cursorRowId}`} // More specific key
+      key={`selection-${data.id}-${isSelected}-${isCursor}-${cursorRowId}`}
       className={`
         flex items-center justify-center h-full w-full cursor-pointer relative
         transition-all duration-200
@@ -90,7 +82,7 @@ const SelectionCellRenderer = (props: any) => {
       `}
       onClick={handleClick}
     >
-      {/* Cursor indicator - only show if truly cursor */}
+      {/* Cursor indicator */}
       {isCursor && (
         <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 rounded-l"></div>
       )}
@@ -123,26 +115,19 @@ const DescriptionCellRenderer = (props: any) => {
   const gridContext = api.getGridOption('context');
   const { cursorRowId, selectedReferences = [] } = gridContext || {};
   
-  // More precise cursor detection - ensure only ONE cell has cursor at a time
-  const isCursor = Boolean(
-    cursorRowId && 
-    data.id && 
-    data.id === cursorRowId && 
-    typeof data.id === 'string' && 
-    typeof cursorRowId === 'string'
-  );
+  const isCursor = cursorRowId && data.id === cursorRowId;
   const isSelected = selectedReferences.some((sel: any) => sel.item && sel.item.id === data.id);
   
   return (
     <div 
-      key={`description-${data.id}-${isSelected}-${isCursor}-${cursorRowId}`} // More specific key
+      key={`description-${data.id}-${isSelected}-${isCursor}-${cursorRowId}`}
       className={`
         flex flex-col gap-2 py-2 relative transition-all duration-200
         ${isCursor ? 'ring-2 ring-blue-400 ring-offset-1' : ''}
         ${isSelected ? 'bg-emerald-50' : 'bg-white'}
       `}
     >
-      {/* Cursor indicator - only show if truly cursor */}
+      {/* Cursor indicator */}
       {isCursor && (
         <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 rounded-l"></div>
       )}
@@ -284,20 +269,6 @@ export function FileReferences({
   const allSelected = selectedCount === totalCount && totalCount > 0;
   const isMultiSelectMode = selectedCount > 0;
 
-  // Initialize cursor to current reference
-  useEffect(() => {
-    if (currentReference && !isMultiSelectMode) {
-      setCursorRowId(currentReference.id);
-      const index = references.findIndex(ref => ref.id === currentReference.id);
-      if (index !== -1) {
-        setCursorIndex(index);
-      }
-    } else if (references.length > 0 && !cursorRowId) {
-      setCursorRowId(references[0].id);
-      setCursorIndex(0);
-    }
-  }, [currentReference, references, isMultiSelectMode, cursorRowId]);
-
   // Helper function to get all visible (filtered) references in order
   const getVisibleReferences = useCallback((): FileReference[] => {
     if (!gridApi) return references;
@@ -325,7 +296,7 @@ export function FileReferences({
     return index === -1 ? 0 : index;
   }, [cursorRowId, getVisibleReferences]);
 
-  // Update cursor index when cursor row ID changes - more robust sync
+  // Update cursor index when cursor row ID changes
   useEffect(() => {
     if (cursorRowId && gridApi) {
       const visibleRefs = getVisibleReferences();
@@ -359,130 +330,45 @@ export function FileReferences({
     });
   }, []);
 
-  // Column definitions
-  const columnDefs = useMemo<ColDef[]>(() => [
-    {
-      headerName: '',
-      field: 'select',
-      width: 60,
-      pinned: 'left',
-      sortable: false,
-      filter: false,
-      cellRenderer: SelectionCellRenderer,
-      cellStyle: { padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center' }
-    },
-    {
-      headerName: 'Description',
-      field: 'description',
-      flex: 2,
-      cellRenderer: DescriptionCellRenderer,
-      cellStyle: { padding: '8px' },
-      sortable: true,
-      comparator: naturalComparator, // Natural sorting for descriptions with numbers
-      filter: 'agTextColumnFilter',
-      filterParams: {
-        filterOptions: ['contains', 'startsWith', 'endsWith'],
-        debounceMs: 300
-      }
-    },
-    {
-      headerName: 'Date',
-      field: 'date',
-      width: 120,
-      cellRenderer: DateCellRenderer,
-      cellStyle: { padding: '8px', display: 'flex', alignItems: 'center' },
-      sortable: true,
-      comparator: naturalComparator, // Natural sorting for dates with numbers
-      filter: 'agTextColumnFilter',
-      filterParams: {
-        filterOptions: ['contains', 'equals'],
-        debounceMs: 300
-      }
-    },
-    {
-      headerName: 'Reference',
-      field: 'reference',
-      width: 140,
-      cellRenderer: ReferenceCellRenderer,
-      cellStyle: { padding: '8px', display: 'flex', alignItems: 'center' },
-      sortable: true,
-      comparator: naturalComparator, // Natural sorting for references with numbers
-      filter: 'agTextColumnFilter',
-      filterParams: {
-        filterOptions: ['contains', 'equals'],
-        debounceMs: 300
-      }
-    }
-  ], [naturalComparator]);
-
-  // Grid options
-  const gridOptions = useMemo(() => ({
-    suppressRowClickSelection: true,
-    rowHeight: 85, // Similar to original card height
-    headerHeight: 40,
-    rowBuffer: 10,
-    suppressRowVirtualisation: false,
-    animateRows: false,
-    suppressColumnMoveAnimation: true,
-    defaultColDef: {
-      resizable: true,
-      sortable: true
-    },
-    getRowId: (params: any) => params.data.id,
-    enableCellTextSelection: false,
-    suppressMenuHide: true,
-    rowSelection: 'multiple' as const,
-    suppressRowDeselection: false
-  }), []);
-
-  // Selection helper functions
-  const getSelectionNumber = (reference: FileReference): number | null => {
-    const found = selectedReferences.find((item) => item.item.id === reference.id);
-    return found ? found.order : null;
-  };
-
-  const isSelected = (reference: FileReference): boolean => {
-    return selectedReferences.some((item) => item.item.id === reference.id);
-  };
-
-  // Enhanced toggle selection with event handling
-  const handleToggleSelection = useCallback((reference: FileReference, event?: React.MouseEvent) => {
+  // Selection management functions (improved from new-document-selector patterns)
+  const toggleSelection = useCallback((reference: FileReference, event?: React.MouseEvent) => {
+    const existingIndex = selectedReferences.findIndex(sel => sel.item.id === reference.id);
+    
+    const visibleRefs = getVisibleReferences();
+    const itemIndex = visibleRefs.findIndex(ref => ref.id === reference.id);
+    
     if (event?.ctrlKey || event?.metaKey) {
       // Ctrl+Click: Toggle individual selection
-      onToggleSelection(reference);
-      setCursorRowId(reference.id);
-      const visibleRefs = getVisibleReferences();
-      const index = visibleRefs.findIndex(ref => ref.id === reference.id);
-      if (index !== -1) {
-        setCursorIndex(index);
-        setRangeAnchor(index);
+      if (existingIndex >= 0) {
+        // Remove existing selection
+        const newSelections = selectedReferences.filter((_, index) => index !== existingIndex);
+        // Note: We're not calling onSelectionChange directly, but onToggleSelection
+        onToggleSelection(reference);
+      } else {
+        // Add new selection
+        onToggleSelection(reference);
       }
+      setCursorRowId(reference.id);
+      setCursorIndex(itemIndex !== -1 ? itemIndex : 0);
+      setRangeAnchor(itemIndex !== -1 ? itemIndex : 0);
     } else if (event?.shiftKey && rangeAnchor !== -1) {
       // Shift+Click: Range selection
       event.preventDefault();
-      const visibleRefs = getVisibleReferences();
-      const endIndex = visibleRefs.findIndex(ref => ref.id === reference.id);
-      if (endIndex !== -1) {
-        handleRangeSelection(rangeAnchor, endIndex);
+      if (itemIndex !== -1) {
+        handleRangeSelection(rangeAnchor, itemIndex);
         setCursorRowId(reference.id);
-        setCursorIndex(endIndex);
+        setCursorIndex(itemIndex);
       }
     } else {
-      // Regular toggle or checkbox click
+      // Regular click: Single selection
       onToggleSelection(reference);
-      if (!isMultiSelectMode) {
-        setCursorRowId(reference.id);
-        const visibleRefs = getVisibleReferences();
-        const index = visibleRefs.findIndex(ref => ref.id === reference.id);
-        if (index !== -1) {
-          setCursorIndex(index);
-          setRangeAnchor(index);
-        }
-      }
+      setCursorRowId(reference.id);
+      setCursorIndex(itemIndex !== -1 ? itemIndex : 0);
+      setRangeAnchor(itemIndex !== -1 ? itemIndex : 0);
     }
-  }, [onToggleSelection, rangeAnchor, isMultiSelectMode, getVisibleReferences]);
+  }, [selectedReferences, rangeAnchor, onToggleSelection, getVisibleReferences]);
 
-  // Range selection logic with chronological order
+  // Range selection with chronological order (copied from new-document-selector)
   const handleRangeSelection = useCallback((startIndex: number, endIndex: number) => {
     const visibleRefs = getVisibleReferences();
     
@@ -523,33 +409,119 @@ export function FileReferences({
     });
   }, [getVisibleReferences, selectedReferences, onToggleSelection]);
 
+  const selectAll = useCallback(() => {
+    if (!gridApi) return;
+    
+    const allItems: FileReference[] = [];
+    gridApi.forEachNodeAfterFilterAndSort(node => {
+      if (node.data) {
+        allItems.push(node.data);
+      }
+    });
+    
+    onSelectAll();
+    setRangeAnchor(0);
+  }, [gridApi, onSelectAll]);
+
+  const clearAllSelections = useCallback(() => {
+    onBulkDeselect();
+    setRangeAnchor(-1);
+  }, [onBulkDeselect]);
+
+  // Column definitions
+  const columnDefs = useMemo<ColDef[]>(() => [
+    {
+      headerName: '',
+      field: 'select',
+      width: 60,
+      pinned: 'left',
+      sortable: false,
+      filter: false,
+      cellRenderer: SelectionCellRenderer,
+      cellStyle: { padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+    },
+    {
+      headerName: 'Description',
+      field: 'description',
+      flex: 2,
+      cellRenderer: DescriptionCellRenderer,
+      cellStyle: { padding: '8px' },
+      sortable: true,
+      comparator: naturalComparator,
+      filter: 'agTextColumnFilter',
+      filterParams: {
+        filterOptions: ['contains', 'startsWith', 'endsWith'],
+        debounceMs: 300
+      }
+    },
+    {
+      headerName: 'Date',
+      field: 'date',
+      width: 120,
+      cellRenderer: DateCellRenderer,
+      cellStyle: { padding: '8px', display: 'flex', alignItems: 'center' },
+      sortable: true,
+      comparator: naturalComparator,
+      filter: 'agTextColumnFilter',
+      filterParams: {
+        filterOptions: ['contains', 'equals'],
+        debounceMs: 300
+      }
+    },
+    {
+      headerName: 'Reference',
+      field: 'reference',
+      width: 140,
+      cellRenderer: ReferenceCellRenderer,
+      cellStyle: { padding: '8px', display: 'flex', alignItems: 'center' },
+      sortable: true,
+      comparator: naturalComparator,
+      filter: 'agTextColumnFilter',
+      filterParams: {
+        filterOptions: ['contains', 'equals'],
+        debounceMs: 300
+      }
+    }
+  ], [naturalComparator]);
+
+  // Grid options
+  const gridOptions = useMemo(() => ({
+    suppressRowClickSelection: true,
+    rowHeight: 85,
+    headerHeight: 40,
+    rowBuffer: 10,
+    suppressRowVirtualisation: false,
+    animateRows: false,
+    suppressColumnMoveAnimation: true,
+    defaultColDef: {
+      resizable: true,
+      sortable: true
+    },
+    getRowId: (params: any) => params.data.id,
+    enableCellTextSelection: false,
+    suppressMenuHide: true,
+    rowSelection: 'multiple' as const,
+    suppressRowDeselection: false
+  }), []);
+
   // Update grid context when state changes
   useEffect(() => {
     if (gridApi) {
       const newContext = {
         selectedReferences,
         cursorRowId,
-        onToggleSelection: handleToggleSelection,
+        onToggleSelection: toggleSelection,
         isMultiSelectMode
       };
 
       gridApi.setGridOption('context', newContext);
 
-      // Force immediate and aggressive refresh of all cells
+      // Force immediate refresh of all cells to update visual state
       gridApi.refreshCells({
-        force: true,
-        suppressFlash: false
+        force: true
       });
-      
-      // Double refresh for stubborn visual states
-      setTimeout(() => {
-        gridApi.refreshCells({
-          force: true,
-          suppressFlash: true
-        });
-      }, 5);
     }
-  }, [gridApi, selectedReferences, cursorRowId, handleToggleSelection, isMultiSelectMode]);
+  }, [gridApi, selectedReferences, cursorRowId, toggleSelection, isMultiSelectMode]);
 
   // Handle grid ready
   const onGridReady = useCallback((params: GridReadyEvent) => {
@@ -562,17 +534,17 @@ export function FileReferences({
     const initialContext = {
       selectedReferences,
       cursorRowId: currentReference?.id || references[0]?.id || null,
-      onToggleSelection: handleToggleSelection,
+      onToggleSelection: toggleSelection,
       isMultiSelectMode
     };
 
     params.api.setGridOption('context', initialContext);
-  }, [references, currentReference, selectedReferences, handleToggleSelection, isMultiSelectMode]);
+  }, [references, currentReference, selectedReferences, toggleSelection, isMultiSelectMode]);
 
   // Handle cell clicks
   const onCellClicked = useCallback((event: CellClickedEvent) => {
     if (event.colDef.field === 'select') {
-      return; // Selection handled by cell renderer
+      return;
     }
 
     const reference = event.data;
@@ -585,7 +557,7 @@ export function FileReferences({
 
     if (event.event?.ctrlKey || event.event?.metaKey) {
       // Ctrl+Click: Toggle selection
-      handleToggleSelection(reference, event.event as React.MouseEvent);
+      toggleSelection(reference, event.event as React.MouseEvent);
     } else if (event.event?.shiftKey && rangeAnchor !== -1) {
       // Shift+Click: Range selection
       handleRangeSelection(rangeAnchor, clickIndex);
@@ -601,9 +573,9 @@ export function FileReferences({
       setCursorIndex(clickIndex);
       setRangeAnchor(clickIndex);
     }
-  }, [handleToggleSelection, rangeAnchor, handleRangeSelection, isMultiSelectMode, onBulkDeselect, onSelectReference, getVisibleReferences]);
+  }, [toggleSelection, rangeAnchor, handleRangeSelection, isMultiSelectMode, onBulkDeselect, onSelectReference, getVisibleReferences]);
 
-  // Handle keyboard events
+  // Handle keyboard events (improved from new-document-selector patterns)
   const onCellKeyDown = useCallback((event: CellKeyDownEvent) => {
     const { key, ctrlKey, metaKey, shiftKey } = event.event;
     
@@ -697,7 +669,7 @@ export function FileReferences({
         event.event.preventDefault();
         const currentRef = visibleRefs[currentIndex];
         if (currentRef) {
-          handleToggleSelection(currentRef);
+          toggleSelection(currentRef);
           setRangeAnchor(currentIndex);
         }
         handled = true;
@@ -706,13 +678,13 @@ export function FileReferences({
       case 'Escape':
         // Escape: Clear all selections and reset all states
         event.event.preventDefault();
-        if (isMultiSelectMode) {
+        if (selectedReferences.length > 0) {
           // Step 1: Clear ALL state immediately
           const targetCursor = currentReference ? currentReference.id : (visibleRefs[0]?.id || null);
           
           setCursorRowId(null);  // Force clear cursor
           setRangeAnchor(-1);
-          onBulkDeselect();      // Clear selections
+          clearAllSelections();      // Clear selections
           
           // Step 2: Force complete grid refresh
           setTimeout(() => {
@@ -744,7 +716,7 @@ export function FileReferences({
         if (ctrlKey || metaKey) {
           // Ctrl+A: Select all
           event.event.preventDefault();
-          onSelectAll();
+          selectAll();
           setRangeAnchor(0);
           handled = true;
         }
@@ -766,11 +738,11 @@ export function FileReferences({
     if (handled) {
       event.event.stopPropagation();
     }
-  }, [gridApi, getCurrentCursorIndex, getVisibleReferences, getRowIdFromIndex, rangeAnchor, handleRangeSelection, handleToggleSelection, isMultiSelectMode, onBulkDeselect, onSelectAll, onSelectReference]);
+  }, [gridApi, getCurrentCursorIndex, getVisibleReferences, getRowIdFromIndex, rangeAnchor, handleRangeSelection, toggleSelection, clearAllSelections, selectedReferences, selectAll, isMultiSelectMode, onSelectReference, currentReference]);
 
   // Clear states when selections are cleared externally
   useEffect(() => {
-    if (selectedCount === 0) {
+    if (selectedReferences.length === 0) {
       setRangeAnchor(-1);
       
       // Only reset cursor if we're not already in a clearing operation
@@ -781,7 +753,8 @@ export function FileReferences({
         // Only update if different from current
         if (targetCursor && targetCursor !== cursorRowId) {
           setCursorRowId(targetCursor);
-          const index = references.findIndex(ref => ref.id === targetCursor);
+          const visibleRefs = getVisibleReferences();
+          const index = visibleRefs.findIndex(ref => ref.id === targetCursor);
           if (index !== -1) {
             setCursorIndex(index);
           }
@@ -793,11 +766,11 @@ export function FileReferences({
         }
       }
     }
-  }, [selectedCount, currentReference, references, gridApi, cursorRowId]);
+  }, [selectedReferences.length, gridApi, cursorRowId, currentReference, references, getVisibleReferences]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border flex flex-col overflow-hidden h-full focus:outline-none focus:ring-2 focus:ring-emerald-500">
-      {/* Header - EXACT original styling */}
+      {/* Header */}
       <div className="bg-emerald-700 text-white px-4 py-2 flex justify-between items-center relative">
         <h2 className="text-lg font-semibold flex items-center gap-2">
           📋 Client Index References
@@ -842,6 +815,12 @@ export function FileReferences({
                   <span>
                     <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Esc</kbd> clear
                   </span>
+                  <span>
+                    <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Ctrl+A</kbd> select all
+                  </span>
+                  <span>
+                    <kbd className="px-1 py-0.5 bg-gray-200 rounded text-gray-800">Enter</kbd> select
+                  </span>
                 </div>
               </TooltipContent>
             </Tooltip>
@@ -849,7 +828,7 @@ export function FileReferences({
         </div>
       </div>
 
-      {/* AG Grid - Replaces the virtualized list */}
+      {/* AG Grid */}
       <div className="flex-1 ag-theme-alpine">
         {references.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-500">
@@ -872,7 +851,7 @@ export function FileReferences({
         )}
       </div>
 
-      {/* Footer with action buttons - kept from original */}
+      {/* Footer with action buttons */}
       <div className="border-t bg-gray-50 p-3">
         <div className="flex gap-2 flex-wrap">
           <Button
@@ -905,7 +884,14 @@ export function FileReferences({
             </>
           )}
           
-          
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onDetectRemaining}
+            className="text-xs ml-auto"
+          >
+            🔍 Detect Remaining
+          </Button>
         </div>
       </div>
     </div>
