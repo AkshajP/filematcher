@@ -1,4 +1,4 @@
-// lib/types.ts - Type Definitions
+// fuzzy-matcher/lib/types.ts - Enhanced ID generation
 
 export interface FileMatch {
   path: string;
@@ -6,7 +6,7 @@ export interface FileMatch {
 }
 
 export interface FileReference {
-  id: string; // Add unique identifier
+  id: string; // Unique identifier
   description: string;
   date?: string;
   reference?: string;
@@ -14,9 +14,9 @@ export interface FileReference {
 }
 
 export interface MatchedPair {
-  id:string;
-  referenceId: string; //< added since references could be potentially identical
-  reference: string; 
+  id: string; // Unique identifier for the pair
+  referenceId: string; // References the FileReference.id - crucial for proper deletion
+  reference: string; // Human-readable reference description
   path: string;
   score: number;
   timestamp: string;
@@ -68,6 +68,42 @@ export interface MatcherActions {
   updateFilePathsOnly: (filePaths: string[]) => void;
 }
 
+// Enhanced ID generation with better uniqueness and collision detection
 export const generateUniqueId = (): string => {
-    return `_${Math.random().toString(36).substr(2, 9)}`;
+  // Use timestamp + random for better uniqueness
+  const timestamp = Date.now().toString(36);
+  const randomPart = Math.random().toString(36).substr(2, 9);
+  const extraRandom = Math.random().toString(36).substr(2, 4);
+  
+  return `${timestamp}_${randomPart}_${extraRandom}`;
+};
+
+// Utility function to ensure references have proper IDs
+export const ensureReferenceIds = (references: FileReference[]): FileReference[] => {
+  return references.map(ref => ({
+    ...ref,
+    id: ref.id || generateUniqueId()
+  }));
+};
+
+// Utility function to validate a MatchedPair has required fields
+export const validateMatchedPair = (pair: MatchedPair): boolean => {
+  const requiredFields = ['id', 'referenceId', 'reference', 'path'];
+  return requiredFields.every(field => pair[field as keyof MatchedPair]);
+};
+
+// Debug function to check for ID conflicts
+export const findIdConflicts = (items: { id: string }[]): string[] => {
+  const seen = new Set<string>();
+  const conflicts: string[] = [];
+  
+  items.forEach(item => {
+    if (seen.has(item.id)) {
+      conflicts.push(item.id);
+    } else {
+      seen.add(item.id);
+    }
+  });
+  
+  return conflicts;
 };

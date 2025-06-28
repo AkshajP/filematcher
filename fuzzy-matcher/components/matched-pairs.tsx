@@ -4,10 +4,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MatchedPair } from '@/lib/types';
-
 interface MatchedPairsProps {
   matchedPairs: MatchedPair[];
-  onRemoveMatch: (index: number) => void;
+  onRemoveMatch: (pairId: string) => void; // Changed from index to pairId
 }
 
 export function MatchedPairs({ matchedPairs, onRemoveMatch }: MatchedPairsProps) {
@@ -33,22 +32,22 @@ export function MatchedPairs({ matchedPairs, onRemoveMatch }: MatchedPairsProps)
           </div>
         ) : (
           <div className="space-y-3">
-            {matchedPairs.map((pair, index) => {
+            {matchedPairs.map((pair) => { // Remove index parameter
               const parts = pair.path.split('/');
               const fileName = parts.pop() || '';
               const pathParts = parts.join('/');
 
               return (
                 <div
-                  key={pair.id} // Correction: Use a unique ID from the pair object
+                  key={pair.id} // Use pair.id as key
                   className="bg-green-50 border border-green-200 rounded-md p-4 relative group"
                 >
-                  {/* Remove Button */}
+                  {/* Remove Button - Fixed to use pair.id */}
                   <Button
                     size="sm"
                     variant="destructive"
                     className="absolute top-2 right-2 w-6 h-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={() => onRemoveMatch(index)}
+                    onClick={() => onRemoveMatch(pair.id)} // Pass pair.id instead of index
                     title="Remove match"
                   >
                     ×
@@ -88,6 +87,12 @@ export function MatchedPairs({ matchedPairs, onRemoveMatch }: MatchedPairsProps)
                     {pair.originalReference && (
                       <Badge variant="outline" className="text-xs border-purple-300 text-purple-700 bg-purple-50 flex-shrink-0">
                         <span className="break-all">{pair.originalReference}</span>
+                      </Badge>
+                    )}
+                    {/* Add Reference ID for debugging if needed */}
+                    {process.env.NODE_ENV === 'development' && (
+                      <Badge variant="outline" className="text-xs border-gray-300 text-gray-500 bg-gray-50 flex-shrink-0">
+                        ID: {pair.referenceId?.slice(-6)}
                       </Badge>
                     )}
                   </div>

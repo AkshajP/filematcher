@@ -644,3 +644,225 @@ export function AutoMatchDialog({
     </div>
   );
 }
+/*
+--changes to make
+
+  // fuzzy-matcher/components/auto-match-dialog.tsx - Key changes for referenceId support
+
+// Update the key sections that use reference.id:
+
+// In the toggleSuggestionSelection function, replace the line:
+// s.reference.id === suggestion.reference.id
+
+const toggleSuggestionSelection = useCallback((suggestion: AutoMatchSuggestion) => {
+  setSuggestions(prev => prev.map(s => 
+    s.reference.id === suggestion.reference.id  // Use reference.id instead of description
+      ? { ...s, isSelected: !s.isSelected }
+      : s
+  ));
+}, []);
+
+// In the acceptSuggestion function:
+const acceptSuggestion = useCallback((suggestion: AutoMatchSuggestion) => {
+  setSuggestions(prev => prev.map(s => 
+    s.reference.id === suggestion.reference.id  // Use reference.id instead of description
+      ? { ...s, isAccepted: true, isRejected: false, isSelected: false }
+      : s
+  ));
+}, []);
+
+// In the rejectSuggestion function:
+const rejectSuggestion = useCallback((suggestion: AutoMatchSuggestion) => {
+  setSuggestions(prev => prev.map(s => 
+    s.reference.id === suggestion.reference.id  // Use reference.id instead of description
+      ? { ...s, isRejected: true, isAccepted: false, isSelected: false }
+      : s
+  ));
+}, []);
+
+// In the selectAllVisible function:
+const selectAllVisible = useCallback(() => {
+  const visibleIds = new Set(filteredSuggestions.map(fs => fs.reference.id));  // Use reference.id
+  setSuggestions(prev => prev.map(suggestion => ({
+    ...suggestion,
+    isSelected: visibleIds.has(suggestion.reference.id)  // Use reference.id
+  })));
+}, [filteredSuggestions]);
+
+// In the selectHighConfidence function:
+const selectHighConfidence = useCallback(() => {
+  const highConfidenceIds = new Set(
+    filteredSuggestions
+      .filter(fs => fs.score >= 0.7 && fs.suggestedPath)
+      .map(fs => fs.reference.id)  // Use reference.id
+  );
+  setSuggestions(prev => prev.map(suggestion => ({
+    ...suggestion,
+    isSelected: highConfidenceIds.has(suggestion.reference.id)  // Use reference.id
+  })));
+}, [filteredSuggestions]);
+
+// In the bulkAcceptSelected function:
+const bulkAcceptSelected = useCallback(() => {
+  setSuggestions(prev => prev.map(s => 
+    s.isSelected 
+      ? { ...s, isAccepted: true, isRejected: false, isSelected: false }
+      : s
+  ));
+}, []);
+
+// In the bulkRejectSelected function:
+const bulkRejectSelected = useCallback(() => {
+  setSuggestions(prev => prev.map(s => 
+    s.isSelected 
+      ? { ...s, isRejected: true, isAccepted: false, isSelected: false }
+      : s
+  ));
+}, []);
+
+// Update the main mapping section JSX to use reference.id as key:
+{filteredSuggestions.length === 0 ? (
+  <div className="text-center py-8 text-gray-500">
+    No suggestions match the current confidence filter.
+    <br />
+    Try lowering the minimum confidence threshold.
+  </div>
+) : (
+  filteredSuggestions.map((suggestion, index) => {
+    const isItemSelected = isSelected(suggestion);
+    const isAccepted = suggestion.isAccepted;
+    const isRejected = suggestion.isRejected;
+    const isCursor = index === cursorIndex;
+    const parts = suggestion.suggestedPath.split('/');
+    const fileName = parts.pop() || '';
+    const folderPath = parts.join('/');
+
+    return (
+      <div
+        key={suggestion.reference.id} // Use reference.id instead of description
+        ref={(el) => { itemRefs.current[index] = el; }}
+        className={`
+          border rounded-lg p-4 transition-all relative group
+          ${isItemSelected ? 'bg-blue-50 border-blue-300 border-2' : 'bg-white border-gray-200'}
+          ${isAccepted ? 'bg-green-50 border-green-300' : ''}
+          ${isRejected ? 'bg-red-50 border-red-300' : ''}
+          ${isCursor ? 'ring-2 ring-blue-400 ring-offset-1' : ''}
+          ${!isAccepted && !isRejected ? 'hover:bg-gray-50 cursor-pointer' : ''}
+        `}
+        onClick={(e) => handleSuggestionClick(suggestion, index, e)}
+        onMouseDown={(e) => {
+          if (e.shiftKey) {
+            e.preventDefault();
+          }
+        }}
+      > */
+        {/* Rest of the JSX remains the same */}
+        {/* Cursor indicator */}
+        {isCursor && (
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 rounded-l-md"></div>
+        )}
+
+        <div className="flex items-center gap-4">
+          {/* Selection checkbox or status */}
+          <div className="flex-shrink-0">
+            {isAccepted ? (
+              <CheckCircle className="w-5 h-5 text-green-600" />
+            ) : isRejected ? (
+              <XCircle className="w-5 h-5 text-red-600" />
+            ) : (
+              <Checkbox
+                checked={isItemSelected}
+                onCheckedChange={() => toggleSuggestionSelection(suggestion)}
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
+          </div>
+
+          {/* Reference description with scroll fallback */}
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <div className="text-sm font-medium text-gray-900 break-all overflow-x-auto max-w-full">
+              <div className="min-w-0 whitespace-pre-wrap">{suggestion.reference.description}</div>
+            </div>
+            <div className="flex flex-wrap gap-1 mt-1 overflow-x-auto max-w-full">
+              {suggestion.reference.date && (
+                <span className="text-xs text-gray-500 bg-blue-50 px-1 rounded flex-shrink-0">
+                  Date: <span className="break-all">{suggestion.reference.date}</span>
+                </span>
+              )}
+              {suggestion.reference.reference && (
+                <span className="text-xs text-gray-500 bg-purple-50 px-1 rounded flex-shrink-0">
+                  Ref: <span className="break-all">{suggestion.reference.reference}</span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Arrow */}
+          <div className="flex-shrink-0 text-gray-400">
+            →
+          </div>
+
+          {/* Suggested file path with scroll fallback */}
+          <div className="flex-1 min-w-0 overflow-hidden">
+            {suggestion.suggestedPath ? (
+              <>
+                <div className="text-xs text-gray-500 font-mono break-all overflow-x-auto max-w-full">
+                  <div className="min-w-0 whitespace-pre-wrap">{folderPath}/</div>
+                </div>
+                <div className="text-sm font-medium text-gray-900 break-all overflow-x-auto max-w-full">
+                  <div className="min-w-0 whitespace-pre-wrap">{fileName}</div>
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-gray-500 italic">
+                No suitable match found
+              </div>
+            )}
+          </div>
+
+          {/* Confidence score */}
+          <div className="flex-shrink-0">
+            {suggestion.suggestedPath && (
+              <Badge 
+                className={`text-xs ${getConfidenceColor(suggestion.score)}`}
+                variant="outline"
+              >
+                {getConfidenceIcon(suggestion.score)} {(suggestion.score * 100).toFixed(0)}%
+              </Badge>
+            )}
+          </div>
+
+          {/* Individual actions */}
+          {!isAccepted && !isRejected && suggestion.suggestedPath && (
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-8 h-8 p-0 text-green-600 hover:bg-green-50"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  acceptSuggestion(suggestion);
+                }}
+                title="Accept suggestion"
+              >
+                ✓
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-8 h-8 p-0 text-red-600 hover:bg-red-50"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  rejectSuggestion(suggestion);
+                }}
+                title="Reject suggestion"
+              >
+                ✘
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  })
+)}

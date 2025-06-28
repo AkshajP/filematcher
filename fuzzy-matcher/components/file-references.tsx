@@ -430,59 +430,74 @@ export function FileReferences({
 
   // Column definitions
   const columnDefs = useMemo<ColDef[]>(() => [
-    {
-      headerName: '',
-      field: 'select',
-      width: 60,
-      pinned: 'left',
-      sortable: false,
-      filter: false,
-      cellRenderer: SelectionCellRenderer,
-      cellStyle: { padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center' }
-    },
-    {
-      headerName: 'Description',
-      field: 'description',
-      flex: 2,
-      cellRenderer: DescriptionCellRenderer,
-      cellStyle: { padding: '8px' },
-      sortable: true,
-      comparator: naturalComparator,
-      filter: 'agTextColumnFilter',
-      filterParams: {
-        filterOptions: ['contains', 'startsWith', 'endsWith'],
-        debounceMs: 300
-      }
-    },
-    {
-      headerName: 'Date',
-      field: 'date',
-      width: 120,
-      cellRenderer: DateCellRenderer,
-      cellStyle: { padding: '8px', display: 'flex', alignItems: 'center' },
-      sortable: true,
-      comparator: naturalComparator,
-      filter: 'agTextColumnFilter',
-      filterParams: {
-        filterOptions: ['contains', 'equals'],
-        debounceMs: 300
-      }
-    },
-    {
-      headerName: 'Reference',
-      field: 'reference',
-      width: 140,
-      cellRenderer: ReferenceCellRenderer,
-      cellStyle: { padding: '8px', display: 'flex', alignItems: 'center' },
-      sortable: true,
-      comparator: naturalComparator,
-      filter: 'agTextColumnFilter',
-      filterParams: {
-        filterOptions: ['contains', 'equals'],
-        debounceMs: 300
-      }
+  {
+    headerName: '',
+    field: 'select',
+    width: 60,
+    pinned: 'left',
+    sortable: false,
+    filter: false,
+    cellRenderer: SelectionCellRenderer,
+    cellStyle: () => ({ 
+      padding: '0', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center' 
+    })
+  },
+  {
+    headerName: 'Description',
+    field: 'description',
+    flex: 2,
+    cellRenderer: DescriptionCellRenderer,
+    cellStyle: () => ({ 
+      padding: '8px' 
+    }),
+    sortable: true,
+    comparator: naturalComparator,
+    filter: 'agTextColumnFilter',
+    filterParams: {
+      filterOptions: ['contains', 'startsWith', 'endsWith'],
+      debounceMs: 300
     }
-  ], [naturalComparator]);
+  },
+  {
+    headerName: 'Date',
+    field: 'date',
+    width: 120,
+    cellRenderer: DateCellRenderer,
+    cellStyle: () => ({ 
+      padding: '8px', 
+      display: 'flex', 
+      alignItems: 'center' 
+    }),
+    sortable: true,
+    comparator: naturalComparator,
+    filter: 'agTextColumnFilter',
+    filterParams: {
+      filterOptions: ['contains', 'equals'],
+      debounceMs: 300
+    }
+  },
+  {
+    headerName: 'Reference',
+    field: 'reference',
+    width: 140,
+    cellRenderer: ReferenceCellRenderer,
+    cellStyle: () => ({ 
+      padding: '8px', 
+      display: 'flex', 
+      alignItems: 'center' 
+    }),
+    sortable: true,
+    comparator: naturalComparator,
+    filter: 'agTextColumnFilter',
+    filterParams: {
+      filterOptions: ['contains', 'equals'],
+      debounceMs: 300
+    }
+  }
+], [naturalComparator]);
 
   // Grid options
   const gridOptions = useMemo(() => ({
