@@ -1,4 +1,4 @@
-// lib/import-manager.ts - Import Manager with Validation
+// fuzzy-matcher/lib/import-manager.ts - Enhanced Import Manager with referenceId support
 
 import { ExportMetadata, createFolderStructureHash } from './export-manager';
 import { MatchedPair, FileReference, generateUniqueId } from './types';
@@ -13,10 +13,14 @@ export interface ImportValidationResult {
     missingFiles: number;
     newFiles: number;
     pathChanges: number;
+    missingReferences: number;
+    newReferences: number;
   };
   exactMatches: string[];
   missingFiles: Array<{ reference: string; originalPath: string }>;
+  missingReferences: Array<{ reference: string; path: string; referenceId: string }>;
   newFiles: string[];
+  unmappedReferences: FileReference[];
   potentialMatches: Array<{ 
     reference: string; 
     originalPath: string; 
@@ -34,7 +38,7 @@ export interface ImportOptions {
 }
 
 /**
- * Parses exported CSV file and extracts metadata and mappings
+ * Parses exported CSV file and extracts metadata and mappings with enhanced field support
  */
 export async function parseExportedCSV(file: File): Promise<{
   metadata?: ExportMetadata;
@@ -69,17 +73,18 @@ export async function parseExportedCSV(file: File): Promise<{
     }
 
     const headerLine = lines[headerLineIndex];
-    const expectedHeaders = ['File Reference', 'File Path', 'Match Score', 'Timestamp', 'Method', 'Original Date', 'Original Reference'];
-    
-    // Validate header
     const headers = parseCSVLine(headerLine);
-    const hasValidHeaders = expectedHeaders.every((expected, index) => 
-      headers[index] && headers[index].toLowerCase().includes(expected.toLowerCase().replace(/\s+/g, ''))
+    
+    // Detect export format version based on headers
+    const hasNewFormat = headers.some(h => 
+      h.toLowerCase().includes('pair id') || h.toLowerCase().includes('reference id')
     );
-
-    if (!hasValidHeaders) {
-      errors.push('CSV header format not recognized. Expected TERES File Mapper export format.');
-    }
+    
+    console.log('Import format detection:', {
+      headers,
+      hasNewFormat,
+      exportVersion: metadata?.exportVersion
+    });
 
     // Parse data rows
     for (let i = headerLineIndex + 1; i < lines.length; i++) {
@@ -88,8 +93,32 @@ export async function parseExportedCSV(file: File): Promise<{
 
       try {
         const columns = parseCSVLine(line);
-        if (columns.length >= 5) {
+        
+        if (hasNewFormat && columns.length >= 9) {
+          // New format: Pair ID, Reference ID, File Reference, File Path, Match Score, Timestamp, Method, Original Date, Original Reference
           const pair: MatchedPair = {
+            id: generateUniqueId(), // Generate new ID for current session
+            referenceId: columns[1] || generateUniqueId(), // Use imported referenceId or generate
+            reference: columns[2] || '',
+            path: columns[3] || '',
+            score: parseFloat(columns[4]?.replace('%', '') || '0') / 100,
+            timestamp: columns[5] || new Date().toISOString(),
+            method: (['manual', 'auto', 'manual-bulk'].includes(columns[6]) 
+                    ? columns[6] 
+                    : 'manual') as 'manual' | 'auto' | 'manual-bulk',
+            originalDate: columns[7] || undefined,
+            originalReference: columns[8] || undefined,
+            sessionId: metadata?.sessionId
+          };
+
+          if (pair.reference && pair.path) {
+            mappings.push(pair);
+          }
+        } else if (columns.length >= 5) {
+          // Legacy format: File Reference, File Path, Match Score, Timestamp, Method, Original Date, Original Reference
+          const pair: MatchedPair = {
+            id: generateUniqueId(),
+            referenceId: generateUniqueId(), // Generate new referenceId for legacy imports
             reference: columns[0] || '',
             path: columns[1] || '',
             score: parseFloat(columns[2]?.replace('%', '') || '0') / 100,
@@ -111,6 +140,7 @@ export async function parseExportedCSV(file: File): Promise<{
       }
     }
 
+    console.log('Parsed mappings:', mappings.length, 'mappings');
     return { metadata, mappings, errors };
   } catch (error) {
     errors.push(`Failed to read CSV file: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -119,15 +149,17 @@ export async function parseExportedCSV(file: File): Promise<{
 }
 
 /**
- * Validates imported mappings against current folder structure
+ * Enhanced validation that handles referenceId mapping
  */
-export function validateImportedMappings(
+export function validateImportedMappingsAgainstCurrentState(
   importedMappings: MatchedPair[],
+  currentReferences: FileReference[],
   currentFilePaths: string[],
   importedMetadata?: ExportMetadata
 ): ImportValidationResult {
   const exactMatches: string[] = [];
   const missingFiles: Array<{ reference: string; originalPath: string }> = [];
+  const missingReferences: Array<{ reference: string; path: string; referenceId: string }> = [];
   const potentialMatches: Array<{ 
     reference: string; 
     originalPath: string; 
@@ -137,6 +169,11 @@ export function validateImportedMappings(
   const errors: string[] = [];
 
   const currentPathsSet = new Set(currentFilePaths);
+  
+  // Create maps for efficient lookup
+  const currentReferencesByDescription = new Map(
+    currentReferences.map(ref => [ref.description, ref])
+  );
 
   // Validate folder structure if metadata available
   if (importedMetadata && currentFilePaths.length > 0) {
@@ -149,95 +186,25 @@ export function validateImportedMappings(
 
     const fileCountDiff = Math.abs(currentFilePaths.length - importedMetadata.totalFileCount);
     if (fileCountDiff > 0) {
-      errors.push(`File count changed: ${fileCountDiff > importedMetadata.totalFileCount ? '+' : ''}${fileCountDiff - importedMetadata.totalFileCount} files`);
+      errors.push(`File count changed: ${currentFilePaths.length - importedMetadata.totalFileCount > 0 ? '+' : ''}${currentFilePaths.length - importedMetadata.totalFileCount} files`);
     }
   }
 
   // Check each imported mapping
   importedMappings.forEach(mapping => {
-    if (currentPathsSet.has(mapping.path)) {
-      exactMatches.push(mapping.path);
-    } else {
-      missingFiles.push({
-        reference: mapping.reference,
-        originalPath: mapping.path
-      });
-
-      // Look for potential matches (same filename, different path)
-      const originalFileName = mapping.path.split('/').pop() || '';
-      const potentialPath = currentFilePaths.find(path => 
-        path.split('/').pop() === originalFileName
-      );
-
-      if (potentialPath) {
-        potentialMatches.push({
-          reference: mapping.reference,
-          originalPath: mapping.path,
-          suggestedPath: potentialPath,
-          similarity: calculatePathSimilarity(mapping.path, potentialPath)
-        });
-      }
-    }
-  });
-
-  // Identify new files (files in current folder not in import)
-  const importedPaths = new Set(importedMappings.map(m => m.path));
-  const newFiles = currentFilePaths.filter(path => !importedPaths.has(path));
-
-  const validationSummary = {
-    totalMappings: importedMappings.length,
-    exactMatches: exactMatches.length,
-    missingFiles: missingFiles.length,
-    newFiles: newFiles.length,
-    pathChanges: potentialMatches.length
-  };
-
-  return {
-    isValid: errors.length === 0 || exactMatches.length > 0,
-    metadata: importedMetadata,
-    mappings: importedMappings,
-    validationSummary,
-    exactMatches,
-    missingFiles,
-    newFiles,
-    potentialMatches,
-    errors
-  };
-}
-
-export function validateImportedMappingsAgainstCurrentState(
-  importedMappings: MatchedPair[],
-  currentReferences: FileReference[],
-  currentFilePaths: string[],
-  importedMetadata?: ExportMetadata
-): ImportValidationResult {
-  const exactMatches: string[] = [];
-  const missingFiles: Array<{ reference: string; originalPath: string }> = [];
-  const missingReferences: Array<{ reference: string; path: string }> = [];
-  const potentialMatches: Array<{ 
-    reference: string; 
-    originalPath: string; 
-    suggestedPath: string; 
-    similarity: number; 
-  }> = [];
-  const errors: string[] = [];
-
-  const currentPathsSet = new Set(currentFilePaths);
-  const currentReferencesSet = new Set(currentReferences.map(ref => ref.description));
-
-  // Check each imported mapping
-  importedMappings.forEach(mapping => {
-    const hasReference = currentReferencesSet.has(mapping.reference);
+    const currentRef = currentReferencesByDescription.get(mapping.reference);
     const hasFile = currentPathsSet.has(mapping.path);
 
-    if (hasReference && hasFile) {
-      // Perfect match
+    if (currentRef && hasFile) {
+      // Perfect match - update the mapping to use current reference ID
+      mapping.referenceId = currentRef.id;
       exactMatches.push(mapping.path);
-    } else if (!hasReference) {
+    } else if (!currentRef) {
       // Reference doesn't exist in current index
       missingReferences.push({
         reference: mapping.reference,
-        path: mapping.path
+        path: mapping.path,
+        referenceId: mapping.referenceId
       });
     } else if (!hasFile) {
       // File doesn't exist, but reference does
@@ -264,8 +231,8 @@ export function validateImportedMappingsAgainstCurrentState(
   });
 
   // Find references that have no mappings (new in current index)
-  const mappedReferences = new Set(importedMappings.map(m => m.reference));
-  const unmappedReferences = currentReferences.filter(ref => !mappedReferences.has(ref.description));
+  const mappedReferenceDescriptions = new Set(importedMappings.map(m => m.reference));
+  const unmappedReferences = currentReferences.filter(ref => !mappedReferenceDescriptions.has(ref.description));
 
   // Find files that have no mappings (new files)
   const mappedPaths = new Set(importedMappings.map(m => m.path));
@@ -297,7 +264,7 @@ export function validateImportedMappingsAgainstCurrentState(
 }
 
 /**
- * Applies imported mappings with specified options
+ * Enhanced import application with proper referenceId handling
  */
 export function applyImportedMappings(
   importedMappings: MatchedPair[],
@@ -313,12 +280,13 @@ export function applyImportedMappings(
   const referencesToRestore: FileReference[] = [];
   const usedFilePaths = new Set<string>();
 
-  // Import exact matches
+  // Import exact matches with updated referenceIds
   if (options.importExactMatches) {
     importedMappings.forEach(mapping => {
       if (validationResult.exactMatches.includes(mapping.path)) {
         mappingsToImport.push({
           ...mapping,
+          id: generateUniqueId(), // Generate new ID for current session
           timestamp: new Date().toISOString(),
         });
         usedFilePaths.add(mapping.path);
@@ -336,6 +304,7 @@ export function applyImportedMappings(
       if (originalMapping) {
         mappingsToImport.push({
           ...originalMapping,
+          id: generateUniqueId(),
           path: match.suggestedPath,
           timestamp: new Date().toISOString(),
           method: 'auto' as const
@@ -349,11 +318,18 @@ export function applyImportedMappings(
   if (options.restoreMissingReferences && validationResult.missingReferences) {
     validationResult.missingReferences.forEach(missingRef => {
       referencesToRestore.push({
+        id: missingRef.referenceId, // Use the original referenceId
         description: missingRef.reference,
         isGenerated: false // These came from original client index
       });
     });
   }
+
+  console.log('Applied import mappings:', {
+    mappingsToImport: mappingsToImport.length,
+    referencesToRestore: referencesToRestore.length,
+    usedFilePaths: usedFilePaths.size
+  });
 
   return {
     mappingsToImport,
@@ -362,7 +338,7 @@ export function applyImportedMappings(
   };
 }
 
-// Helper functions
+// Helper functions (unchanged but included for completeness)
 
 function parseMetadataFromComments(commentLines: string[]): ExportMetadata {
   const metadata: Partial<ExportMetadata> = {};
@@ -388,33 +364,6 @@ function parseMetadataFromComments(commentLines: string[]): ExportMetadata {
   }
 
   return metadata as ExportMetadata;
-}
-
-export interface ImportValidationResult {
-  isValid: boolean;
-  metadata?: ExportMetadata;
-  mappings: MatchedPair[];
-  validationSummary: {
-    totalMappings: number;
-    exactMatches: number;
-    missingFiles: number;
-    newFiles: number;
-    pathChanges: number;
-    missingReferences: number;
-    newReferences: number;
-  };
-  exactMatches: string[];
-  missingFiles: Array<{ reference: string; originalPath: string }>;
-  missingReferences: Array<{ reference: string; path: string }>;
-  newFiles: string[];
-  unmappedReferences: FileReference[];
-  potentialMatches: Array<{ 
-    reference: string; 
-    originalPath: string; 
-    suggestedPath: string; 
-    similarity: number; 
-  }>;
-  errors: string[];
 }
 
 function extractValue(commentLine: string): string {

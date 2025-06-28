@@ -1,4 +1,4 @@
-// lib/export-manager.ts - Enhanced Export with Metadata
+// fuzzy-matcher/lib/export-manager.ts - Enhanced Export with referenceId
 
 import { MatchedPair } from './types';
 
@@ -55,7 +55,7 @@ export function createFolderStructureHash(filePaths: string[]): string {
 }
 
 /**
- * Enhanced export function with metadata
+ * Enhanced export function with metadata and referenceId support
  */
 export function exportMappingsWithMetadata(
   matchedPairs: MatchedPair[],
@@ -67,7 +67,7 @@ export function exportMappingsWithMetadata(
     folderName,
     folderStructureHash: createFolderStructureHash(filePaths),
     totalFileCount: filePaths.length,
-    exportVersion: '1.0',
+    exportVersion: '2.0', // Incremented version for referenceId support
     exportTimestamp: new Date().toISOString(),
     sessionId
   };
@@ -85,12 +85,14 @@ export function exportMappingsWithMetadata(
   csvRows.push(`# Session ID: ${metadata.sessionId}`);
   csvRows.push('# ');
   
-  // Add CSV header
-  csvRows.push('File Reference,File Path,Match Score,Timestamp,Method,Original Date,Original Reference');
+  // Add CSV header with new fields
+  csvRows.push('Pair ID,Reference ID,File Reference,File Path,Match Score,Timestamp,Method,Original Date,Original Reference');
   
-  // Add mapping data
+  // Add mapping data with enhanced fields
   matchedPairs.forEach(pair => {
     const row = [
+      pair.id || '', // Export the pair ID
+      pair.referenceId || '', // Export the reference ID
       pair.reference,
       pair.path,
       `${(pair.score * 100).toFixed(1)}%`,
